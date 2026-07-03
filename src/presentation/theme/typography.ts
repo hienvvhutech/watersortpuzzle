@@ -1,0 +1,30 @@
+export const typography = {
+  fontFamily: 'System',
+  fontSize: {
+    xxs: 9,
+    xs: 11,
+    sm: 13,
+    md: 15,
+    lg: 18,
+    xl: 22,
+    xxl: 28,
+    xxxl: 40,
+    titleLogo: 46,
+  },
+  fontWeight: {
+    light: '300',
+    regular: '400',
+    medium: '500',
+    semibold: '600',
+    bold: '700',
+    extraBold: '800',
+    black: '900',
+  } as const,
+  letterSpacing: {
+    tight: -0.5,
+    normal: 0,
+    wide: 1.5,
+    wider: 3,
+    widest: 7,
+  },
+};
