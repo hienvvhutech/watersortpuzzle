@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { ProfileState, LevelProgress, CrownType, Achievement, DailyMission } from '../../domain/types';
+import { ProfileState, LevelProgress, CrownType, Achievement, DailyMission, Difficulty, WinRewardResult } from '../../domain/types';
 import { SaveService } from '../../services/SaveService';
 import { EconomyService } from '../../services/EconomyService';
 import { XPService } from '../../services/XPService';
 import { RewardService } from '../../services/RewardService';
+import { DifficultyService } from '../../services/DifficultyService';
 
 // Default initial state
 const defaultState = {
@@ -14,6 +15,9 @@ const defaultState = {
   diamonds: 0,
   winStreak: 0,
   longestStreak: 0,
+  perfectStreakCombo: 0,
+  consecutiveFails: 0,
+  seasonPassStars: 0,
   levelProgress: {} as Record<number, LevelProgress>,
   dailyChallengeCompletions: [] as string[],
   mysteryChest: { chestMeter: 0, keysCount: 0 },
@@ -26,6 +30,16 @@ const defaultState = {
   achievements: {} as Record<string, Achievement>,
   dailyMissions: [] as DailyMission[],
   unlockedBadges: [] as string[],
+
+  // Play Session Telemetry
+  sessionLevelsPlayed: 0,
+  sessionTotalTime: 0,
+  sessionCoinsEarned: 0,
+  sessionXpEarned: 0,
+  sessionStarsEarned: 0,
+  sessionPerfectWins: 0,
+  sessionGoldCrowns: 0,
+  sessionNewRecords: 0,
 };
 
 // Seed initial achievements
@@ -82,31 +96,35 @@ export interface ProfileStore extends ProfileState {
   addXp: (amount: number) => { leveledUp: boolean; levelsGained: number };
   incrementStreak: () => void;
   resetStreak: () => void;
+  resetPerfectCombo: () => void;
+  incrementConsecutiveFails: () => void;
 
   // Level Completions
   handleLevelWin: (
     levelId: number,
     movesTaken: number,
     timeTaken: number,
+    difficulty: Difficulty,
     optimalMoves: number,
     isDailyChallenge: boolean,
     hintsUsed: boolean
   ) => {
-    crown: CrownType;
-    coinsEarned: number;
-    xpEarned: number;
+    rewards: WinRewardResult;
     leveledUp: boolean;
     levelsGained: number;
     isNewBestMoves: boolean;
     isNewBestTime: boolean;
+    isNewBestScore: boolean;
     isNewCrown: boolean;
+    isNewRecord: boolean;
   };
 
   // Achievements
   incrementAchievementProgress: (id: string, amount: number) => void;
   claimAchievementReward: (id: string) => void;
 
-  // Badges & Skins
+  // Telemetry & Badges
+  resetSessionTelemetry: () => void;
   unlockBadge: (badgeId: string) => void;
   resetProfile: () => void;
 }
@@ -164,14 +182,41 @@ export const useProfileStore = create<ProfileStore>()(
         set({ winStreak: 0 });
       },
 
-      handleLevelWin: (levelId, movesTaken, timeTaken, optimalMoves, isDailyChallenge, hintsUsed) => {
-        const { winStreak, levelProgress, coins, playerLevel, playerXp } = get();
+      resetPerfectCombo: () => {
+        set({ perfectStreakCombo: 0 });
+      },
+
+      incrementConsecutiveFails: () => {
+        set((state) => ({
+          consecutiveFails: state.consecutiveFails + 1,
+          perfectStreakCombo: 0,
+        }));
+      },
+
+      resetSessionTelemetry: () => {
+        set({
+          sessionLevelsPlayed: 0,
+          sessionTotalTime: 0,
+          sessionCoinsEarned: 0,
+          sessionXpEarned: 0,
+          sessionStarsEarned: 0,
+          sessionPerfectWins: 0,
+          sessionGoldCrowns: 0,
+          sessionNewRecords: 0,
+        });
+      },
+
+      handleLevelWin: (levelId, movesTaken, timeTaken, difficulty, optimalMoves, isDailyChallenge, hintsUsed) => {
+        const { winStreak, perfectStreakCombo, seasonPassStars, levelProgress, coins, playerLevel, playerXp } = get();
 
         // 1. Calculate Rewards using RewardService
         const rewards = RewardService.calculateWinRewards(
           movesTaken,
           optimalMoves,
+          timeTaken,
+          difficulty,
           winStreak,
+          perfectStreakCombo,
           isDailyChallenge,
           hintsUsed
         );
@@ -183,12 +228,14 @@ export const useProfileStore = create<ProfileStore>()(
         const existingProgress = levelProgress[levelId];
         let isNewBestMoves = false;
         let isNewBestTime = false;
+        let isNewBestScore = false;
         let isNewCrown = false;
 
         const nextCrown = rewards.crown;
         let highestCrown = nextCrown;
         let bestMoves = movesTaken;
         let fastestTime = timeTaken;
+        let bestScore = rewards.totalScore;
 
         if (existingProgress) {
           // Compare moves
@@ -207,6 +254,14 @@ export const useProfileStore = create<ProfileStore>()(
             fastestTime = existingProgress.fastestTime;
           }
 
+          // Compare scores
+          if (rewards.totalScore > (existingProgress.bestScore || 0)) {
+            bestScore = rewards.totalScore;
+            isNewBestScore = true;
+          } else {
+            bestScore = existingProgress.bestScore || 0;
+          }
+
           // Compare crowns: gold > silver > bronze
           const crownRank = { none: 0, bronze: 1, silver: 2, gold: 3 };
           if (crownRank[nextCrown] > crownRank[existingProgress.highestCrown]) {
@@ -218,13 +273,17 @@ export const useProfileStore = create<ProfileStore>()(
         } else {
           isNewBestMoves = true;
           isNewBestTime = true;
+          isNewBestScore = true;
           isNewCrown = true;
         }
+
+        const isNewRecord = isNewBestMoves || isNewBestTime || isNewBestScore;
 
         const updatedProgress: LevelProgress = {
           levelId,
           highestCrown,
           bestMoves,
+          bestScore,
           fastestTime,
           firstTry: existingProgress ? existingProgress.firstTry : !hintsUsed,
           restarts: existingProgress ? existingProgress.restarts : 0,
@@ -238,21 +297,42 @@ export const useProfileStore = create<ProfileStore>()(
           [levelId]: updatedProgress,
         };
 
-        // 4. Update Win Streak
+        // 4. Update Season Pass Stars
+        let nextStars = seasonPassStars + rewards.starsEarned;
+        let passCoinsBonus = 0;
+        if (nextStars >= 30) {
+          nextStars = nextStars % 30;
+          passCoinsBonus = 200; // Season pass tier bonus!
+        }
+
+        // 5. Update Win Streak
         const nextStreak = winStreak + 1;
         const nextLongest = Math.max(get().longestStreak, nextStreak);
 
-        // 5. Update State
-        set({
-          coins: EconomyService.add(coins, rewards.totalCoins),
+        // 6. Update State
+        set((state) => ({
+          coins: EconomyService.add(state.coins, rewards.totalCoins + passCoinsBonus),
           playerLevel: xpResult.level,
           playerXp: xpResult.xp,
           winStreak: nextStreak,
           longestStreak: nextLongest,
+          perfectStreakCombo: rewards.newPerfectStreakCombo,
+          consecutiveFails: 0,
+          seasonPassStars: nextStars,
           levelProgress: nextLevelProgress,
-        });
 
-        // 6. Update achievements dynamically
+          // Update telemetry counters
+          sessionLevelsPlayed: state.sessionLevelsPlayed + 1,
+          sessionTotalTime: state.sessionTotalTime + timeTaken,
+          sessionCoinsEarned: state.sessionCoinsEarned + rewards.totalCoins + passCoinsBonus,
+          sessionXpEarned: state.sessionXpEarned + rewards.totalXp,
+          sessionStarsEarned: state.sessionStarsEarned + rewards.starsEarned,
+          sessionPerfectWins: state.sessionPerfectWins + (rewards.crown === 'gold' ? 1 : 0),
+          sessionGoldCrowns: state.sessionGoldCrowns + (rewards.crown === 'gold' ? 1 : 0),
+          sessionNewRecords: state.sessionNewRecords + (isNewRecord ? 1 : 0),
+        }));
+
+        // 7. Update achievements dynamically
         get().incrementAchievementProgress('first_victory', 1);
         if (!hintsUsed) {
           get().incrementAchievementProgress('perfect_solver', 1);
@@ -268,14 +348,14 @@ export const useProfileStore = create<ProfileStore>()(
         }
 
         return {
-          crown: rewards.crown,
-          coinsEarned: rewards.totalCoins,
-          xpEarned: rewards.totalXp,
+          rewards,
           leveledUp: xpResult.leveledUp,
           levelsGained: xpResult.levelsGained,
           isNewBestMoves,
           isNewBestTime,
+          isNewBestScore,
           isNewCrown,
+          isNewRecord,
         };
       },
 

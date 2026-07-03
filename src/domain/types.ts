@@ -79,8 +79,32 @@ export interface LuckySpinState {
   freeSpinsAvailable: number;
 }
 
+export interface WinRewardResult {
+  crown: CrownType;
+  baseScore: number;
+  timeBonus: number;
+  perfectBonus: number;
+  noHintBonus: number;
+  comboMultiplier: number;
+  totalScore: number;
+
+  baseCoins: number;
+  crownBonusCoins: number;
+  streakBonusCoins: number;
+  totalCoins: number;
+
+  baseXp: number;
+  crownBonusXp: number;
+  streakBonusXp: number;
+  totalXp: number;
+
+  starsEarned: number;
+  newPerfectStreakCombo: number;
+}
+
 export interface GameState {
   currentLevel: number;
+  difficulty: Difficulty;
   tubes: string[][]; // Each inner array represents color layers in the tube from bottom to top
   history: HistoryEntry[];
   coins: number;
@@ -93,6 +117,7 @@ export interface GameState {
   levelStartTime: number; // Date.now() timestamp
   isPlaying: boolean;
   isWon: boolean;
+  lastWinReward: WinRewardResult | null;
 }
 
 export type CrownType = 'none' | 'bronze' | 'silver' | 'gold';
@@ -101,6 +126,7 @@ export interface LevelProgress {
   levelId: number;
   highestCrown: CrownType;
   bestMoves: number;
+  bestScore: number;
   fastestTime: number; // in seconds
   firstTry: boolean;
   restarts: number;
@@ -149,6 +175,9 @@ export interface ProfileState {
   diamonds: number;
   winStreak: number;
   longestStreak: number;
+  perfectStreakCombo: number;
+  consecutiveFails: number;
+  seasonPassStars: number;
   levelProgress: Record<number, LevelProgress>;
   dailyChallengeCompletions: string[]; // YYYYMMDD dates
   mysteryChest: MysteryChestState;
@@ -156,5 +185,15 @@ export interface ProfileState {
   achievements: Record<string, Achievement>;
   dailyMissions: DailyMission[];
   unlockedBadges: string[];
+  
+  // Play Session Telemetry
+  sessionLevelsPlayed: number;
+  sessionTotalTime: number; // in seconds
+  sessionCoinsEarned: number;
+  sessionXpEarned: number;
+  sessionStarsEarned: number;
+  sessionPerfectWins: number;
+  sessionGoldCrowns: number;
+  sessionNewRecords: number;
 }
 

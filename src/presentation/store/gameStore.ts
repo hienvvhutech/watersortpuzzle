@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { GameState, GameStats, GameInventory, TubeSkin, GameTheme } from '../../domain/types';
+import { GameState, GameStats, GameInventory, TubeSkin, GameTheme, Difficulty, WinRewardResult } from '../../domain/types';
 import { generateLevel } from '../../domain/generator';
 import { isValidMove, executeMove, checkWinCondition, TUBE_CAPACITY } from '../../domain/rules';
 import { solve } from '../../domain/solver';
 import { useProfileStore } from './profileStore';
 import { SaveService } from '../../services/SaveService';
+import { DifficultyService } from '../../services/DifficultyService';
 
 interface GameActions {
   startLevel: (levelId: number) => void;
@@ -53,6 +54,7 @@ const initialInventory: GameInventory = {
 
 const defaultState: GameState = {
   currentLevel: 1,
+  difficulty: 'easy',
   tubes: [],
   history: [],
   coins: 150, // Initial coins synced with profile
@@ -71,6 +73,7 @@ const defaultState: GameState = {
   levelStartTime: 0,
   isPlaying: false,
   isWon: false,
+  lastWinReward: null,
 };
 
 
@@ -83,12 +86,24 @@ export const useGameStore = create<GameStore>()(
       hasAddedTube: false,
 
       startLevel: (levelId) => {
-        const level = generateLevel(levelId);
+        // Fetch player stats from profileStore to compute dynamic difficulty
+        const profile = useProfileStore.getState();
+        const playerStats = {
+          winStreak: profile.winStreak,
+          consecutiveFails: profile.consecutiveFails,
+          lastPerformanceScores: Object.values(profile.levelProgress)
+            .map(lp => lp.bestScore)
+            .slice(-2),
+        };
+
+        const difficulty = DifficultyService.getNextDifficulty(levelId, playerStats);
+        const level = generateLevel(levelId, difficulty);
         const solution = solve(level.tubes, TUBE_CAPACITY, 2000);
         const par = solution ? solution.length : 12;
 
         set((state) => ({
           currentLevel: levelId,
+          difficulty,
           tubes: level.tubes.map((t) => [...t]),
           initialTubes: level.tubes.map((t) => [...t]),
           history: [],
@@ -101,13 +116,19 @@ export const useGameStore = create<GameStore>()(
           stats: {
             ...state.stats,
             gamesPlayed: state.stats.gamesPlayed + 1,
+            hintUsed: 0,
+            undoUsed: 0,
           },
+          lastWinReward: null,
         }));
       },
 
       restartLevel: () => {
         const { initialTubes } = get();
         if (initialTubes.length === 0) return;
+
+        // Increment restarts / consecutive fails in profile store
+        useProfileStore.getState().incrementConsecutiveFails();
 
         set((state) => ({
           tubes: initialTubes.map((t) => [...t]),
@@ -116,6 +137,11 @@ export const useGameStore = create<GameStore>()(
           isWon: false,
           isPlaying: true,
           levelStartTime: Date.now(),
+          stats: {
+            ...state.stats,
+            hintUsed: 0,
+            undoUsed: 0,
+          }
         }));
       },
 
@@ -162,6 +188,8 @@ export const useGameStore = create<GameStore>()(
           // Update stats
           updatedStats.moves += 1;
 
+          let winResult: any = null;
+
           if (win) {
             const timeSpent = Math.floor((Date.now() - get().levelStartTime) / 1000);
             updatedStats.wins += 1;
@@ -174,10 +202,11 @@ export const useGameStore = create<GameStore>()(
             const movesTaken = get().history.length + 1; // current move counts
             
             // Trigger profile progression calculation
-            useProfileStore.getState().handleLevelWin(
+            winResult = useProfileStore.getState().handleLevelWin(
               get().currentLevel,
               movesTaken,
               timeSpent,
+              get().difficulty,
               get().parMoves,
               false, // isDailyChallenge
               get().stats.hintUsed > 0
@@ -191,6 +220,7 @@ export const useGameStore = create<GameStore>()(
             isWon: win,
             isPlaying: !win,
             stats: updatedStats,
+            lastWinReward: winResult ? winResult.rewards : null,
           }));
 
           return {

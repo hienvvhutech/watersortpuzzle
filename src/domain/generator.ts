@@ -1,6 +1,7 @@
 import { Level, Difficulty } from './types';
 import { solve } from './solver';
 import { TUBE_CAPACITY } from './rules';
+import { DifficultyService } from '../services/DifficultyService';
 
 // LCG Seedable Random Generator
 class SeededRandom {
@@ -47,21 +48,7 @@ export const GAME_COLORS = [
  * Returns the difficulty category for a given level ID.
  */
 export function getDifficultyForLevel(levelId: number): Difficulty {
-  if (levelId <= 5) return 'easy';
-  if (levelId <= 15) return 'normal';
-  if (levelId <= 35) return 'hard';
-  if (levelId <= 70) return 'expert';
-  if (levelId <= 100) {
-    return levelId % 10 === 0 ? 'impossible' : 'expert';
-  }
-  
-  // Post level 100 - cycle difficulties with increasing weight
-  const mod = levelId % 20;
-  if (mod === 0) return 'impossible';
-  if (mod <= 3) return 'easy';
-  if (mod <= 8) return 'normal';
-  if (mod <= 14) return 'hard';
-  return 'expert';
+  return DifficultyService.getDifficultyForLevel(levelId);
 }
 
 /**
@@ -85,8 +72,8 @@ export function getDifficultyConfig(difficulty: Difficulty): { colorsCount: numb
 /**
  * Procedurally generates a solvable level deterministically based on Level ID.
  */
-export function generateLevel(levelId: number): Level {
-  const difficulty = getDifficultyForLevel(levelId);
+export function generateLevel(levelId: number, difficultyOverride?: Difficulty): Level {
+  const difficulty = difficultyOverride || getDifficultyForLevel(levelId);
   const { colorsCount, emptyTubes } = getDifficultyConfig(difficulty);
   
   let attempt = 0;

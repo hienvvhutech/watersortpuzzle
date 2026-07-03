@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useGameStore } from '../src/presentation/store/gameStore';
 import { useSettingsStore } from '../src/presentation/store/settingsStore';
+import { useProfileStore } from '../src/presentation/store/profileStore';
 import { GameBoard } from '../src/presentation/components/GameBoard';
 import { ConfettiEffect } from '../src/presentation/components/ParticleEffect';
 import { useAudio } from '../src/presentation/hooks/useAudio';
@@ -40,6 +41,8 @@ export default function GameScreen() {
     addEmptyTube,
     useHint,
     addCoins,
+    isPlaying,
+    lastWinReward,
   } = useGameStore();
 
   // Settings Store for dynamic toggles
@@ -52,6 +55,20 @@ export default function GameScreen() {
     setVibrationEnabled,
   } = useSettingsStore();
 
+  // Profile Store personal records & telemetry
+  const profileProgress = useProfileStore((state) => state.levelProgress[currentLevel]);
+  const {
+    sessionLevelsPlayed,
+    sessionTotalTime,
+    sessionCoinsEarned,
+    sessionXpEarned,
+    sessionStarsEarned,
+    sessionPerfectWins,
+    sessionGoldCrowns,
+    sessionNewRecords,
+    resetSessionTelemetry,
+  } = useProfileStore();
+
   const theme = THEMES.dark; // Dark gameplay theme
 
   // Local state
@@ -60,8 +77,21 @@ export default function GameScreen() {
   const [adAction, setAdAction] = useState<'hint' | 'tube' | null>(null);
   const [victoryModalVisible, setVictoryModalVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [sessionSummaryVisible, setSessionSummaryVisible] = useState(false);
   const [earnedStars, setEarnedStars] = useState(3);
   const [earnedCoins, setEarnedCoins] = useState(50);
+  const [elapsedTime, setElapsedTime] = useState(0);
+
+  // Elapsed timer effect for Ghost Replay
+  useEffect(() => {
+    if (isPlaying && !isWon) {
+      setElapsedTime(0);
+      const interval = setInterval(() => {
+        setElapsedTime((prev) => prev + 1);
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [isPlaying, isWon, currentLevel]);
 
   // When won, show victory modal after a delay for the confetti to fall
   useEffect(() => {
@@ -105,6 +135,18 @@ export default function GameScreen() {
   const handleBack = () => {
     audio.playSound('click');
     haptics.selection();
+    if (sessionLevelsPlayed > 0) {
+      setSessionSummaryVisible(true);
+    } else {
+      router.replace('/');
+    }
+  };
+
+  const handleExitToHome = () => {
+    audio.playSound('click');
+    haptics.selection();
+    setSessionSummaryVisible(false);
+    resetSessionTelemetry();
     router.replace('/');
   };
 
@@ -272,9 +314,21 @@ export default function GameScreen() {
           <GameBoard />
         </View>
 
-        {/* Region 3: Moves Counter (5%) */}
+        {/* Region 3: Moves Counter & Ghost Replay (5%) */}
         <View style={styles.movesRegion}>
           <Text style={styles.movesText}>Moves: {history.length}</Text>
+          {profileProgress && profileProgress.bestMoves > 0 && (
+            <View style={styles.ghostContainer}>
+              <FontAwesome5 name="ghost" size={12} color="#a78bfa" style={{ marginRight: 6 }} />
+              <Text style={styles.ghostText}>
+                Ghost: {profileProgress.bestMoves - history.length >= 0 
+                  ? `+${profileProgress.bestMoves - history.length}` 
+                  : profileProgress.bestMoves - history.length} moves | {profileProgress.fastestTime - elapsedTime >= 0 
+                  ? `+${profileProgress.fastestTime - elapsedTime}s` 
+                  : `${profileProgress.fastestTime - elapsedTime}s`}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Region 4: Bottom Action Bar (15%) */}
@@ -459,9 +513,76 @@ export default function GameScreen() {
             </View>
 
             <Text style={styles.victorySub}>Level {currentLevel} Completed!</Text>
-            <View style={styles.victoryCoinsContainer}>
-              <FontAwesome5 name="coins" size={18} color="#fbbf24" style={{ marginRight: 8 }} />
-              <Text style={styles.victoryCoins}>+{earnedCoins} COINS</Text>
+
+            {/* Satisfying Score Breakdown */}
+            {lastWinReward && (
+              <View style={styles.scoreBreakdownContainer}>
+                <View style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabel}>Base Score</Text>
+                  <Text style={styles.breakdownValue}>+{lastWinReward.baseScore}</Text>
+                </View>
+                {lastWinReward.timeBonus > 0 && (
+                  <View style={styles.breakdownRow}>
+                    <Text style={styles.breakdownLabel}>Time Bonus</Text>
+                    <Text style={styles.breakdownValue}>+{lastWinReward.timeBonus}</Text>
+                  </View>
+                )}
+                {lastWinReward.perfectBonus > 0 && (
+                  <View style={styles.breakdownRow}>
+                    <Text style={styles.breakdownLabel}>Perfect Bonus</Text>
+                    <Text style={styles.breakdownValue}>+{lastWinReward.perfectBonus}</Text>
+                  </View>
+                )}
+                {lastWinReward.noHintBonus > 0 && (
+                  <View style={styles.breakdownRow}>
+                    <Text style={styles.breakdownLabel}>No Hint Bonus</Text>
+                    <Text style={styles.breakdownValue}>+{lastWinReward.noHintBonus}</Text>
+                  </View>
+                )}
+                {lastWinReward.comboMultiplier > 1.0 && (
+                  <View style={styles.breakdownRow}>
+                    <Text style={[styles.breakdownLabel, { color: '#a78bfa', fontWeight: '900' }]}>
+                      Perfect Win Combo
+                    </Text>
+                    <Text style={[styles.breakdownValue, { color: '#a78bfa', fontWeight: '900' }]}>
+                      x{lastWinReward.comboMultiplier.toFixed(1)}
+                    </Text>
+                  </View>
+                )}
+                <View style={styles.breakdownDivider} />
+                <View style={[styles.breakdownRow, { marginTop: 4 }]}>
+                  <Text style={[styles.breakdownLabel, { fontSize: 16, color: '#f8fafc', fontWeight: '900' }]}>
+                    TOTAL SCORE
+                  </Text>
+                  <Text style={[styles.breakdownValue, { fontSize: 18, color: '#f8fafc', fontWeight: '900' }]}>
+                    {lastWinReward.totalScore}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Decoupled Rewards Summary */}
+            <View style={styles.rewardsSummaryRow}>
+              <View style={styles.rewardSummaryBadge}>
+                <FontAwesome5 name="coins" size={13} color="#fbbf24" style={{ marginRight: 5 }} />
+                <Text style={[styles.rewardSummaryText, { color: '#fbbf24' }]}>
+                  +{lastWinReward?.totalCoins || earnedCoins}
+                </Text>
+              </View>
+
+              <View style={styles.rewardSummaryBadge}>
+                <Ionicons name="sparkles" size={13} color="#3b82f6" style={{ marginRight: 5 }} />
+                <Text style={[styles.rewardSummaryText, { color: '#60a5fa' }]}>
+                  +{lastWinReward?.totalXp || 50} XP
+                </Text>
+              </View>
+
+              <View style={styles.rewardSummaryBadge}>
+                <Ionicons name="star" size={13} color="#a78bfa" style={{ marginRight: 5 }} />
+                <Text style={[styles.rewardSummaryText, { color: '#c084fc' }]}>
+                  +{lastWinReward?.starsEarned || 1} Stars
+                </Text>
+              </View>
             </View>
 
             {/* Main Next Level CTA */}
@@ -506,6 +627,97 @@ export default function GameScreen() {
               >
                 <Ionicons name="refresh" size={18} color="#cbd5e1" style={{ marginRight: 6 }} />
                 <Text style={styles.victorySubButtonText}>Replay</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL: PLAY SESSION SUMMARY OVERLAY */}
+      <Modal visible={sessionSummaryVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.sessionSummaryContent}>
+            <View style={styles.sessionSummaryHeader}>
+              <Ionicons name="trophy" size={26} color="#fbbf24" style={{ marginRight: 10 }} />
+              <Text style={styles.sessionSummaryTitle}>SESSION RECAP</Text>
+            </View>
+            <Text style={styles.sessionSummarySub}>Here is your progress from this session:</Text>
+
+            <View style={styles.sessionStatsGrid}>
+              <View style={styles.sessionStatCard}>
+                <Ionicons name="checkmark-circle" size={18} color="#10b981" />
+                <Text style={styles.sessionStatVal}>{sessionLevelsPlayed}</Text>
+                <Text style={styles.sessionStatLabel}>Levels Won</Text>
+              </View>
+
+              <View style={styles.sessionStatCard}>
+                <Ionicons name="time" size={18} color="#3b82f6" />
+                <Text style={styles.sessionStatVal}>
+                  {sessionLevelsPlayed > 0 ? Math.floor(sessionTotalTime / sessionLevelsPlayed) : 0}s
+                </Text>
+                <Text style={styles.sessionStatLabel}>Avg Time</Text>
+              </View>
+
+              <View style={styles.sessionStatCard}>
+                <Ionicons name="ribbon" size={18} color="#fbbf24" />
+                <Text style={styles.sessionStatVal}>{sessionGoldCrowns}</Text>
+                <Text style={styles.sessionStatLabel}>Gold Crowns</Text>
+              </View>
+
+              <View style={styles.sessionStatCard}>
+                <FontAwesome5 name="coins" size={16} color="#fbbf24" />
+                <Text style={styles.sessionStatVal}>+{sessionCoinsEarned}</Text>
+                <Text style={styles.sessionStatLabel}>Coins Earned</Text>
+              </View>
+
+              <View style={styles.sessionStatCard}>
+                <Ionicons name="sparkles" size={18} color="#60a5fa" />
+                <Text style={styles.sessionStatVal}>+{sessionXpEarned}</Text>
+                <Text style={styles.sessionStatLabel}>XP Gained</Text>
+              </View>
+
+              <View style={styles.sessionStatCard}>
+                <Ionicons name="star" size={18} color="#c084fc" />
+                <Text style={styles.sessionStatVal}>+{sessionStarsEarned}</Text>
+                <Text style={styles.sessionStatLabel}>Season Stars</Text>
+              </View>
+
+              <View style={styles.sessionStatCard}>
+                <Ionicons name="flash" size={18} color="#f43f5e" />
+                <Text style={styles.sessionStatVal}>{sessionNewRecords}</Text>
+                <Text style={styles.sessionStatLabel}>New Records</Text>
+              </View>
+
+              <View style={styles.sessionStatCard}>
+                <Ionicons name="medal" size={18} color="#10b981" />
+                <Text style={styles.sessionStatVal}>{sessionPerfectWins}</Text>
+                <Text style={styles.sessionStatLabel}>Perfect Plays</Text>
+              </View>
+            </View>
+
+            <View style={styles.sessionActions}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.sessionExitButton,
+                  pressed && styles.pressedScale,
+                ]}
+                onPress={handleExitToHome}
+              >
+                <Text style={styles.sessionExitButtonText}>EXIT TO MENU</Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.sessionResumeButton,
+                  pressed && styles.pressedScaleSmall,
+                ]}
+                onPress={() => {
+                  audio.playSound('click');
+                  haptics.selection();
+                  setSessionSummaryVisible(false);
+                }}
+              >
+                <Text style={styles.sessionResumeButtonText}>KEEP PLAYING</Text>
               </Pressable>
             </View>
           </View>
@@ -921,5 +1133,179 @@ const styles = StyleSheet.create({
     color: '#cbd5e1',
     fontSize: 14,
     fontWeight: '800',
+  },
+  // Ghost Replay styles
+  ghostContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(167, 139, 250, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(167, 139, 250, 0.2)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginLeft: 12,
+  },
+  ghostText: {
+    color: '#c084fc',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  // Score Breakdown styles
+  scoreBreakdownContainer: {
+    width: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 20,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: 3,
+  },
+  breakdownLabel: {
+    color: '#94a3b8',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  breakdownValue: {
+    color: '#cbd5e1',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  breakdownDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginVertical: 6,
+    width: '100%',
+  },
+  // Decoupled Rewards styles
+  rewardsSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+    marginBottom: 24,
+  },
+  rewardSummaryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  rewardSummaryText: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  // Session Summary Modal styles
+  sessionSummaryContent: {
+    width: 340,
+    backgroundColor: 'rgba(15, 23, 42, 0.96)',
+    borderRadius: 32,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.6,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  sessionSummaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  sessionSummaryTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#fbbf24',
+    letterSpacing: 2,
+    textShadowColor: 'rgba(251, 191, 36, 0.35)',
+    textShadowRadius: 8,
+  },
+  sessionSummarySub: {
+    fontSize: 13,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginBottom: 20,
+    fontWeight: '500',
+  },
+  sessionStatsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 24,
+  },
+  sessionStatCard: {
+    width: '48%',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 16,
+    padding: 10,
+    alignItems: 'center',
+    marginVertical: 5,
+  },
+  sessionStatVal: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#f8fafc',
+    marginVertical: 3,
+  },
+  sessionStatLabel: {
+    fontSize: 10,
+    color: '#64748b',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  sessionActions: {
+    width: '100%',
+  },
+  sessionExitButton: {
+    backgroundColor: '#3b82f6',
+    paddingVertical: 14,
+    borderRadius: 20,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 10,
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  sessionExitButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 14,
+    letterSpacing: 1,
+  },
+  sessionResumeButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    paddingVertical: 12,
+    borderRadius: 18,
+    width: '100%',
+    alignItems: 'center',
+  },
+  sessionResumeButtonText: {
+    color: '#cbd5e1',
+    fontWeight: '800',
+    fontSize: 13,
+    letterSpacing: 0.5,
   },
 });

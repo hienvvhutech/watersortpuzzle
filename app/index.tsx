@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import Svg, { Rect, Defs, LinearGradient as SvgGradient, Stop, Circle } from 'react-native-svg';
 import { useGameStore } from '../src/presentation/store/gameStore';
 import { useSettingsStore } from '../src/presentation/store/settingsStore';
+import { useProfileStore } from '../src/presentation/store/profileStore';
 import { THEMES } from '../src/presentation/themes';
 import { useAudio } from '../src/presentation/hooks/useAudio';
 import { useHaptics } from '../src/presentation/hooks/useHaptics';
@@ -29,6 +30,7 @@ export default function HomeScreen() {
 
   // Zustand stores
   const { currentLevel, coins, stats, resetGame, startLevel } = useGameStore();
+  const { seasonPassStars } = useProfileStore();
   const {
     soundEnabled,
     musicEnabled,
@@ -134,6 +136,79 @@ export default function HomeScreen() {
             <Text style={styles.playButtonText}>
               {currentLevel === 1 ? 'PLAY NOW' : 'CONTINUE'}
             </Text>
+          </Pressable>
+        </View>
+
+        {/* Season Pass & Locked/Unlocked Friend Battle Launcher */}
+        <View style={styles.metaContainer}>
+          {/* Season Pass Progress Card */}
+          <View style={styles.seasonPassCard}>
+            <View style={styles.seasonPassHeader}>
+              <Ionicons name="gift-sharp" size={16} color="#c084fc" style={{ marginRight: 6 }} />
+              <Text style={styles.seasonPassTitle}>SUMMER SEASON PASS</Text>
+              <Text style={styles.seasonPassStarsCount}>{seasonPassStars}/30 ⭐</Text>
+            </View>
+            <View style={styles.seasonPassProgressBarBg}>
+              <View 
+                style={[
+                  styles.seasonPassProgressBarFill, 
+                  { width: `${Math.min(100, (seasonPassStars / 30) * 100)}%` }
+                ]} 
+              />
+            </View>
+            <Text style={styles.seasonPassDesc}>
+              Complete levels to earn Stars! Reach 30 Stars to unlock +200 Coins!
+            </Text>
+          </View>
+
+          {/* Friend Battle Card (Level 20 locked) */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.friendBattleCard,
+              currentLevel <= 20 && styles.friendBattleLocked,
+              pressed && styles.pressedScaleSmall,
+            ]}
+            onPress={() => {
+              if (currentLevel <= 20) {
+                audio.playSound('error');
+                haptics.error();
+                Alert.alert(
+                  'Locked 🔒',
+                  'Friend Battles unlock at Level 20! Complete more campaign levels to access multiplayer duels.',
+                  [{ text: 'OK' }]
+                );
+              } else {
+                audio.playSound('click');
+                haptics.selection();
+                Alert.alert(
+                  'Unlocked 🔓',
+                  'Friend Battles unlocked! Offline Bot duels and room creations will be active in Phase 2.7B.',
+                  [{ text: 'OK' }]
+                );
+              }
+            }}
+          >
+            <View style={styles.friendBattleContent}>
+              <View style={styles.friendBattleLeft}>
+                <Ionicons 
+                  name={currentLevel <= 20 ? 'lock-closed' : 'people-sharp'} 
+                  size={18} 
+                  color={currentLevel <= 20 ? '#64748b' : '#fbbf24'} 
+                  style={{ marginRight: 8 }} 
+                />
+                <Text style={[
+                  styles.friendBattleText, 
+                  currentLevel <= 20 && { color: '#64748b' }
+                ]}>
+                  FRIEND BATTLES
+                </Text>
+              </View>
+              {currentLevel <= 20 ? (
+                <Text style={styles.friendBattleLockText}>Level 20 Required</Text>
+              ) : (
+                <Ionicons name="chevron-forward" size={16} color="#fbbf24" />
+              )}
+            </View>
           </Pressable>
         </View>
 
@@ -618,5 +693,92 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  metaContainer: {
+    width: '100%',
+    paddingHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 10,
+    alignItems: 'center',
+  },
+  seasonPassCard: {
+    width: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 20,
+    padding: 14,
+    marginBottom: 12,
+  },
+  seasonPassHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  seasonPassTitle: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1,
+    flex: 1,
+  },
+  seasonPassStarsCount: {
+    color: '#c084fc',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  seasonPassProgressBarBg: {
+    height: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 4,
+    width: '100%',
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  seasonPassProgressBarFill: {
+    height: '100%',
+    backgroundColor: '#c084fc',
+    borderRadius: 4,
+  },
+  seasonPassDesc: {
+    color: '#64748b',
+    fontSize: 10,
+    fontWeight: '600',
+    textAlign: 'left',
+  },
+  friendBattleCard: {
+    width: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  friendBattleLocked: {
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.03)',
+  },
+  friendBattleContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  friendBattleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  friendBattleText: {
+    color: '#fbbf24',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  friendBattleLockText: {
+    color: '#64748b',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });
