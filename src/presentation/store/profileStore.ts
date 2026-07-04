@@ -8,6 +8,7 @@ import { RewardService } from '../../services/RewardService';
 import { DifficultyService } from '../../services/DifficultyService';
 import { LeaderboardService } from '../../services/LeaderboardService';
 import { services, IProfileRepository } from '../../shared/IServiceRegistry';
+import { auth } from '../../services/firebase';
 
 // Default initial state
 const defaultState = {
@@ -41,6 +42,7 @@ const defaultState = {
   createdAt: 0,
   updatedAt: 0,
   isProfileCreated: false,
+  lastCloudSyncAt: 0,
 
   // Play Session Telemetry
   sessionLevelsPlayed: 0,
@@ -141,6 +143,7 @@ export interface ProfileStore extends ProfileState {
 
   // Profile Identity Phase 5
   updateProfile: (displayName: string, avatarId: string, country?: string) => void;
+  lastCloudSyncAt: number;
 }
 
 export const useProfileStore = create<ProfileStore>()(
@@ -459,6 +462,7 @@ export const useProfileStore = create<ProfileStore>()(
           const now = Date.now();
           const pId = state.playerId || 'usr_' + Math.random().toString(36).substring(2, 11);
           
+          const isLinked = auth && auth.currentUser && !auth.currentUser.isAnonymous;
           const updatedProfile = {
             playerId: pId,
             displayName,
@@ -467,6 +471,7 @@ export const useProfileStore = create<ProfileStore>()(
             createdAt: state.createdAt || now,
             updatedAt: now,
             isProfileCreated: true,
+            lastCloudSyncAt: isLinked ? now : state.lastCloudSyncAt,
           };
 
           // Save to repository

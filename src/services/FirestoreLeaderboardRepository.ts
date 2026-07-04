@@ -46,8 +46,10 @@ export class FirestoreLeaderboardRepository implements ILeaderboardRepository {
     if (!db) throw new Error('Firestore is not initialized.');
 
     try {
+      const currentSeasonId = 'season_1';
+      // Query the dynamic seasonal entries subcollection
       let q = query(
-        collection(db, 'profiles'),
+        collection(db, 'leaderboards', currentSeasonId, 'entries'),
         orderBy(sortBy, sortBy === 'bestTime' ? 'asc' : 'desc'),
         orderBy('displayName', 'asc'),
         limit(limitCount)
@@ -67,8 +69,8 @@ export class FirestoreLeaderboardRepository implements ILeaderboardRepository {
           username: data.displayName || 'Anonymous',
           avatarId: data.avatarId || 'avatar_1',
           country: data.country || '',
-          level: data.highestLevel || 0,
-          score: data.totalScore || 0,
+          level: data.level || 0,
+          score: data.score || 0,
           coins: data.coins || 0,
           bestTime: data.bestTime || 999,
         });
@@ -90,6 +92,7 @@ export class FirestoreLeaderboardRepository implements ILeaderboardRepository {
     if (!db) throw new Error('Firestore is not initialized.');
 
     try {
+      const currentSeasonId = 'season_1';
       // 1. Fetch group member UIDs from members subcollection
       const membersSnap = await getDocs(collection(db, 'groups', groupId, 'members'));
       const memberUids: string[] = [];
@@ -99,22 +102,38 @@ export class FirestoreLeaderboardRepository implements ILeaderboardRepository {
 
       if (memberUids.length === 0) return [];
 
-      // 2. Fetch profiles for these UIDs
+      // 2. Fetch seasonal leaderboard entries for these UIDs
       const entries: LeaderboardEntry[] = [];
       for (const memberUid of memberUids) {
-        const profileSnap = await getDoc(doc(db, 'profiles', memberUid));
-        if (profileSnap.exists()) {
-          const data = profileSnap.data();
+        const scoreSnap = await getDoc(doc(db, 'leaderboards', currentSeasonId, 'entries', memberUid));
+        if (scoreSnap.exists()) {
+          const data = scoreSnap.data();
           entries.push({
             userId: memberUid,
             username: data.displayName || 'Anonymous',
             avatarId: data.avatarId || 'avatar_1',
             country: data.country || '',
-            level: data.highestLevel || 0,
-            score: data.totalScore || 0,
+            level: data.level || 0,
+            score: data.score || 0,
             coins: data.coins || 0,
             bestTime: data.bestTime || 999,
           });
+        } else {
+          // Fallback: Check root profile if seasonal entry does not exist yet
+          const profileSnap = await getDoc(doc(db, 'profiles', memberUid));
+          if (profileSnap.exists()) {
+            const data = profileSnap.data();
+            entries.push({
+              userId: memberUid,
+              username: data.displayName || 'Anonymous',
+              avatarId: data.avatarId || 'avatar_1',
+              country: data.country || '',
+              level: data.highestLevel || 0,
+              score: data.totalScore || 0,
+              coins: data.coins || 0,
+              bestTime: data.bestTime || 999,
+            });
+          }
         }
       }
 
@@ -140,7 +159,23 @@ export class FirestoreLeaderboardRepository implements ILeaderboardRepository {
   async saveScore(entry: Omit<LeaderboardEntry, 'rank'>): Promise<void> {
     if (!db) return;
     try {
+      const currentSeasonId = 'season_1';
       const uid = await this.ensureAuthenticated();
+      
+      // Save/update seasonal score entry
+      const scoreRef = doc(db, 'leaderboards', currentSeasonId, 'entries', uid);
+      await setDoc(scoreRef, {
+        displayName: entry.username,
+        avatarId: entry.avatarId,
+        country: entry.country || '',
+        level: entry.level,
+        score: entry.score,
+        coins: entry.coins,
+        bestTime: entry.bestTime,
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Maintain root profile summary for compatibility
       const profileRef = doc(db, 'profiles', uid);
       await updateDoc(profileRef, {
         totalScore: entry.score,
@@ -148,7 +183,7 @@ export class FirestoreLeaderboardRepository implements ILeaderboardRepository {
         coins: entry.coins,
         bestTime: entry.bestTime,
         updatedAt: new Date().toISOString(),
-      });
+      }).catch(() => {});
     } catch (e) {
       console.warn('[FirestoreLeaderboardRepository] Failed to save score online:', e);
     }

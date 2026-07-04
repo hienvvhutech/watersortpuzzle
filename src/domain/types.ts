@@ -259,6 +259,7 @@ export interface PlayerProfile {
   lastSeenAt?: string;
   friends?: string[];       // array of friend UIDs
   joinedGroups?: string[];  // array of group IDs
+  lastCloudSyncAt?: number; // timestamp of last cloud sync
 }
 
 // ─── Social System Types ───────────────────────────────────────────────

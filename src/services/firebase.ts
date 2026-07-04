@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, Auth } from 'firebase/auth';
+import { getAuth, Auth, GoogleAuthProvider, OAuthProvider, linkWithCredential, signInWithCredential, AuthCredential } from 'firebase/auth';
 import { Firestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getDatabase, Database } from 'firebase/database';
 
@@ -35,4 +35,4 @@ if (isConfigured) {
   }
 }
 
-export { auth, db, rtdb, isConfigured };
+export { auth, db, rtdb, isConfigured, GoogleAuthProvider, OAuthProvider, linkWithCredential, signInWithCredential, AuthCredential };

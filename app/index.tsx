@@ -30,6 +30,10 @@ import { services, IBattleService } from '../src/shared/IServiceRegistry';
 import { LeaderboardEntry, LeaderboardGroup, FriendProfile, FriendRequest, BattleInvite } from '../src/domain/types';
 import { getAvatarEmoji, AVATARS } from '../src/shared/avatars';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Share } from 'react-native';
+import { AuthService, ConflictDetails } from '../src/services/AuthService';
+import { BackupService } from '../src/services/BackupService';
+import { auth } from '../src/services/firebase';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -124,6 +128,16 @@ export default function HomeScreen() {
   const [formAvatarId, setFormAvatarId] = useState('avatar_1');
   const [formCountry, setFormCountry] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Backup & Cloud Save states
+  const [importModalVisible, setImportModalVisible] = useState(false);
+  const [importString, setImportString] = useState('');
+  const [syncLoading, setSyncLoading] = useState(false);
+  
+  // Conflict states
+  const [conflictModalVisible, setConflictModalVisible] = useState(false);
+  const [conflictDetails, setConflictDetails] = useState<ConflictDetails | null>(null);
+  const [conflictCredential, setConflictCredential] = useState<any>(null);
 
   // Enforce profile creation at launch
   useEffect(() => {
@@ -399,6 +413,98 @@ export default function HomeScreen() {
     } catch (e) {
       setConnecting(false);
       Alert.alert('Connection Failed', 'Could not connect to room. Please check the code.');
+    }
+  };
+
+  const handleExportBackup = async () => {
+    audio.playSound('click');
+    haptics.selection();
+    try {
+      const state = useProfileStore.getState();
+      const backupStr = BackupService.exportBackup(state);
+      await Share.share({
+        message: backupStr,
+        title: 'Water Sort Puzzle Save Backup',
+      });
+    } catch (e) {
+      console.warn('Backup export sharing failed', e);
+    }
+  };
+
+  const handleImportBackup = () => {
+    audio.playSound('click');
+    haptics.selection();
+    if (!importString.trim()) return;
+    try {
+      const data = BackupService.importBackup(importString);
+      if (data && typeof data === 'object') {
+        useProfileStore.setState(data);
+        setImportString('');
+        setImportModalVisible(false);
+        setSettingsVisible(false);
+        Alert.alert(
+          language === 'vi' ? 'Khôi phục thành công' : 'Backup Restored',
+          language === 'vi' ? 'Dữ liệu trò chơi của bạn đã được khôi phục.' : 'Your game save progress has been restored.'
+        );
+      } else {
+        throw new Error('invalid_data');
+      }
+    } catch (e) {
+      haptics.error();
+      audio.playSound('error');
+      Alert.alert(
+        language === 'vi' ? 'Lỗi khôi phục' : 'Restore Error',
+        language === 'vi' ? 'Mã sao lưu không hợp lệ hoặc đã bị sửa đổi.' : 'Save string is invalid or corrupted.'
+      );
+    }
+  };
+
+  const handleLinkCloudSave = async (provider: 'google' | 'apple') => {
+    audio.playSound('click');
+    haptics.selection();
+    setSyncLoading(true);
+    try {
+      await AuthService.linkSocialAccount(provider);
+      setSyncLoading(false);
+      Alert.alert(
+        language === 'vi' ? 'Đồng bộ thành công!' : 'Cloud Sync Enabled!',
+        language === 'vi' ? 'Hồ sơ đã được liên kết và bảo vệ an toàn.' : 'Your profile has been secured in the cloud.'
+      );
+    } catch (err: any) {
+      setSyncLoading(false);
+      if (err.code === 'save_conflict') {
+        setConflictDetails(err.details);
+        setConflictCredential(err.credential);
+        setConflictModalVisible(true);
+      } else {
+        console.warn('Authentication/linking failed', err);
+        Alert.alert(
+          language === 'vi' ? 'Lỗi đồng bộ' : 'Sync Error',
+          language === 'vi' ? 'Không thể kết nối dịch vụ. Thử lại sau.' : 'Failed to connect. Please try again later.'
+        );
+      }
+    }
+  };
+
+  const handleResolveConflict = async (option: 'restore' | 'overwrite') => {
+    if (!conflictCredential || !conflictDetails) return;
+    audio.playSound('click');
+    haptics.selection();
+    setSyncLoading(true);
+    setConflictModalVisible(false);
+    try {
+      await AuthService.resolveCloudConflict(option, conflictCredential, conflictDetails);
+      setSyncLoading(false);
+      setConflictCredential(null);
+      setConflictDetails(null);
+      Alert.alert(
+        language === 'vi' ? 'Thành công' : 'Success',
+        language === 'vi' ? 'Đã áp dụng thay đổi và đồng bộ tiến trình.' : 'Your save preferences have been synchronized.'
+      );
+    } catch (e) {
+      setSyncLoading(false);
+      console.warn('Conflict resolution failed', e);
+      Alert.alert('Lỗi / Error', 'Không thể đồng bộ dữ liệu lúc này.');
     }
   };
 
@@ -950,6 +1056,60 @@ export default function HomeScreen() {
                     <Text style={[styles.languageOptionText, language === 'vi' && styles.languageOptionTextActive]}>VI</Text>
                   </Pressable>
                 </View>
+              </View>
+            </View>
+
+            {/* Cloud Sync Backup Options */}
+            <View style={[styles.settingsBox, { marginTop: 10, paddingVertical: 12 }]}>
+              <Text style={styles.settingSectionHeader}>☁️ Sao lưu đám mây / Cloud Save</Text>
+              
+              <View style={{ paddingVertical: 4 }}>
+                <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 8, lineHeight: 15 }}>
+                  {auth?.currentUser && !auth.currentUser.isAnonymous
+                    ? `Trạng thái / Status: Protected\nLiên kết / Linked: ${auth.currentUser.providerData[0]?.providerId === 'google.com' ? 'Google' : 'Apple'}\nĐồng bộ cuối / Last Sync: ${useProfileStore.getState().lastCloudSyncAt > 0 ? new Date(useProfileStore.getState().lastCloudSyncAt).toLocaleTimeString() : 'N/A'}`
+                    : 'Trạng thái / Status: Not enabled. Your progress is currently stored on this device.'}
+                </Text>
+
+                {(!auth?.currentUser || auth.currentUser.isAnonymous) ? (
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                    <Pressable
+                      style={({ pressed }) => [styles.syncActionBtn, pressed && styles.pressedScaleSmall]}
+                      onPress={() => handleLinkCloudSave('google')}
+                      disabled={syncLoading}
+                    >
+                      <Text style={styles.syncActionBtnText}>🔗 Enable Google</Text>
+                    </Pressable>
+                    <Pressable
+                      style={({ pressed }) => [styles.syncActionBtn, { backgroundColor: 'rgba(15, 23, 42, 0.4)' }, pressed && styles.pressedScaleSmall]}
+                      onPress={() => handleLinkCloudSave('apple')}
+                      disabled={syncLoading}
+                    >
+                      <Text style={styles.syncActionBtnText}>🔗 Enable Apple</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Text style={{ color: '#10b981', fontSize: 11, fontWeight: '800', marginTop: 4 }}>✓ Account Secured</Text>
+                )}
+                {syncLoading && <ActivityIndicator size="small" color="#a78bfa" style={{ marginTop: 8, alignSelf: 'flex-start' }} />}
+              </View>
+            </View>
+
+            {/* Manual Local Backup Options */}
+            <View style={[styles.settingsBox, { marginTop: 10, paddingVertical: 12 }]}>
+              <Text style={styles.settingSectionHeader}>💾 Sao lưu thủ công / Local Backup</Text>
+              <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 4, marginTop: 4 }}>
+                <Pressable
+                  style={({ pressed }) => [styles.syncActionBtn, { backgroundColor: 'rgba(99, 102, 241, 0.15)', borderColor: 'rgba(99, 102, 241, 0.3)' }, pressed && styles.pressedScaleSmall]}
+                  onPress={handleExportBackup}
+                >
+                  <Text style={[styles.syncActionBtnText, { color: '#a5b4fc' }]}>💾 Export Save</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.syncActionBtn, { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.3)' }, pressed && styles.pressedScaleSmall]}
+                  onPress={() => setImportModalVisible(true)}
+                >
+                  <Text style={[styles.syncActionBtnText, { color: '#34d399' }]}>📥 Import Save</Text>
+                </Pressable>
               </View>
             </View>
 
@@ -1796,6 +1956,88 @@ export default function HomeScreen() {
                 onPress={handleProfileFormSubmit}
               >
                 <Text style={styles.dialogCreateBtnText}>{t('profile.save' as any)}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* DIALOG: IMPORT SAVE */}
+      <Modal visible={importModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.dialogContent}>
+            <Text style={styles.dialogTitle}>📥 Nhập sao lưu / Import Save</Text>
+            <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 12, textAlign: 'center', lineHeight: 16 }}>
+              Dán chuỗi mã sao lưu (bắt đầu bằng WSP_SAVE_) vào ô dưới đây để khôi phục tiến trình chơi của bạn.
+            </Text>
+
+            <TextInput
+              style={[styles.dialogInput, { height: 80, textAlignVertical: 'top', paddingTop: 10, fontSize: 10 }]}
+              placeholder="Dán mã WSP_SAVE_... vào đây"
+              placeholderTextColor="#475569"
+              multiline
+              value={importString}
+              onChangeText={setImportString}
+            />
+
+            <View style={styles.dialogActions}>
+              <Pressable
+                style={styles.dialogCancelBtn}
+                onPress={() => { setImportModalVisible(false); setImportString(''); }}
+              >
+                <Text style={styles.dialogCancelBtnText}>Hủy</Text>
+              </Pressable>
+              <Pressable
+                style={styles.dialogCreateBtn}
+                onPress={handleImportBackup}
+              >
+                <Text style={styles.dialogCreateBtnText}>Khôi phục</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* DIALOG: CLOUD SAVE CONFLICT */}
+      <Modal visible={conflictModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.dialogContent, { width: SCREEN_WIDTH * 0.88 }]}>
+            <Text style={styles.dialogTitle}>☁️ Cloud Save Found</Text>
+            
+            <Text style={{ color: '#cbd5e1', fontSize: 13, marginBottom: 16, textAlign: 'center', lineHeight: 18 }}>
+              Phát hiện dữ liệu đã sao lưu của tài khoản này trên đám mây. Bạn muốn sử dụng dữ liệu nào?
+            </Text>
+
+            <View style={{ width: '100%', gap: 12, marginBottom: 20 }}>
+              {/* Option 1: Continue with Cloud Save */}
+              <Pressable
+                style={({ pressed }) => [styles.conflictOptionBtn, pressed && styles.pressedScaleSmall]}
+                onPress={() => handleResolveConflict('restore')}
+              >
+                <Text style={styles.conflictOptionTitle}>○ Continue with Cloud Save</Text>
+                <Text style={styles.conflictOptionDesc}>
+                  Sử dụng dữ liệu từ đám mây (Lv.{conflictDetails?.level || 1} • {conflictDetails?.score || 0} pts) và bỏ dữ liệu hiện tại trên thiết bị này.
+                </Text>
+              </Pressable>
+
+              {/* Option 2: Keep Current Progress */}
+              <Pressable
+                style={({ pressed }) => [styles.conflictOptionBtn, { borderColor: '#10b981' }, pressed && styles.pressedScaleSmall]}
+                onPress={() => handleResolveConflict('overwrite')}
+              >
+                <Text style={[styles.conflictOptionTitle, { color: '#10b981' }]}>○ Keep Current Progress</Text>
+                <Text style={styles.conflictOptionDesc}>
+                  Giữ tiến trình hiện tại của thiết bị (Lv.{campaignProgressLevel} • {totalScore} pts) và ghi đè lưu lên đám mây.
+                </Text>
+              </Pressable>
+            </View>
+
+            <View style={{ width: '100%', alignItems: 'center' }}>
+              <Pressable
+                style={({ pressed }) => [styles.dialogCancelBtn, { width: '100%', paddingVertical: 12 }, pressed && styles.pressedScaleSmall]}
+                onPress={() => { setConflictModalVisible(false); setConflictCredential(null); setConflictDetails(null); }}
+              >
+                <Text style={[styles.dialogCancelBtnText, { textAlign: 'center', fontSize: 13 }]}>Hủy / Cancel</Text>
               </Pressable>
             </View>
           </View>
@@ -2733,5 +2975,50 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 4,
+  },
+
+  // ─── Cloud Save & Backups Styles ──────────────────────────────────────────
+  settingSectionHeader: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  syncActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.4)',
+    borderRadius: 12,
+    paddingVertical: 10,
+  },
+  syncActionBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  conflictOptionBtn: {
+    width: '100%',
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+  },
+  conflictOptionTitle: {
+    color: '#f8fafc',
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  conflictOptionDesc: {
+    color: '#94a3b8',
+    fontSize: 11,
+    lineHeight: 16,
   },
 });
