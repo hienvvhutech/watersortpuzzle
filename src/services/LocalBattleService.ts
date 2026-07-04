@@ -50,6 +50,7 @@ export class LocalBattleService implements IBattleService {
     }
 
     this.session.status = 'active';
+    this.session.opponentProgress = 0;
     if (this.statusCallback) {
       this.statusCallback('active');
     }

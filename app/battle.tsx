@@ -60,12 +60,27 @@ export default function BattleScreen() {
   const [opponentName, setOpponentName] = useState('Opponent');
   const [battleStatus, setBattleStatus] = useState<'active' | 'won' | 'lost'>('active');
   const [battleResultModalVisible, setBattleResultModalVisible] = useState(false);
+  const [currentBattleLevel, setCurrentBattleLevel] = useState(20);
+
+  const initBattleSession = (levelId: number) => {
+    setPlayerProgress(0);
+    setOpponentProgress(0);
+    setBattleStatus('active');
+    setBattleResultModalVisible(false);
+    startLevel(levelId);
+
+    const battleService = services.get<IBattleService>('Battle');
+    if (mode === 'bot') {
+      setOpponentName(t(`battle.botDiff${botDifficulty.charAt(0).toUpperCase() + botDifficulty.slice(1)}` as any));
+      battleService.startBattle(botDifficulty).catch(e => console.warn(e));
+    } else {
+      setOpponentName('Speedy_Sorter');
+      battleService.startBattle('medium').catch(e => console.warn(e));
+    }
+  };
 
   // Initialize Battle Session
   useEffect(() => {
-    // Generate a fixed medium difficulty board for the duel (e.g. Level 20 schema)
-    startLevel(20);
-
     const battleService = services.get<IBattleService>('Battle');
 
     // Subscribe to opponent progress updates
@@ -90,20 +105,27 @@ export default function BattleScreen() {
       }
     });
 
-    // Start simulated duel
-    if (mode === 'bot') {
-      setOpponentName(t(`battle.botDiff${botDifficulty.charAt(0).toUpperCase() + botDifficulty.slice(1)}` as any));
-      battleService.startBattle(botDifficulty);
-    } else {
-      setOpponentName('Speedy_Sorter');
-      // If room mode, start duel
-      battleService.startBattle('medium');
-    }
+    // Start with default level
+    initBattleSession(20);
 
     return () => {
       battleService.leaveRoom();
     };
   }, []);
+
+  const handleNextLevel = () => {
+    audio.playSound('click');
+    haptics.selection();
+    const nextLevel = currentBattleLevel + 1;
+    setCurrentBattleLevel(nextLevel);
+    initBattleSession(nextLevel);
+  };
+
+  const handleRetryLevel = () => {
+    audio.playSound('click');
+    haptics.selection();
+    initBattleSession(currentBattleLevel);
+  };
 
   // Monitor board progress and calculate percentage sorted
   useEffect(() => {
@@ -282,11 +304,29 @@ export default function BattleScreen() {
               </>
             )}
 
+            {mode === 'bot' ? (
+              battleStatus === 'won' ? (
+                <Pressable
+                  style={({ pressed }) => [styles.actionButton, pressed && styles.pressedScale, { backgroundColor: '#10b981', marginBottom: 10 }]}
+                  onPress={handleNextLevel}
+                >
+                  <Text style={[styles.actionButtonText, { color: '#ffffff' }]}>{t('battle.nextLevel')}</Text>
+                </Pressable>
+              ) : (
+                <Pressable
+                  style={({ pressed }) => [styles.actionButton, pressed && styles.pressedScale, { backgroundColor: '#fbbf24', marginBottom: 10 }]}
+                  onPress={handleRetryLevel}
+                >
+                  <Text style={[styles.actionButtonText, { color: '#0f172a' }]}>{t('battle.retry')}</Text>
+                </Pressable>
+              )
+            ) : null}
+
             <Pressable
               style={({ pressed }) => [styles.exitButton, pressed && styles.pressedScale]}
               onPress={handleBack}
             >
-              <Text style={styles.exitButtonText}>EXIT TO LOBBY</Text>
+              <Text style={styles.exitButtonText}>{t('battle.exit')}</Text>
             </Pressable>
           </View>
         </View>
@@ -465,15 +505,28 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
   },
+  actionButton: {
+    width: '100%',
+    padding: 16,
+    borderRadius: 18,
+    alignItems: 'center',
+  },
+  actionButtonText: {
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
   exitButton: {
-    backgroundColor: '#10b981',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1.2,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
     width: '100%',
     padding: 16,
     borderRadius: 18,
     alignItems: 'center',
   },
   exitButtonText: {
-    color: '#ffffff',
+    color: '#cbd5e1',
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 1,

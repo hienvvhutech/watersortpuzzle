@@ -44,8 +44,9 @@
     "close": "CLOSE"
   },
   "levels": {
-    "title": "SELECT LEVEL",
+    "title": "CHOOSE LEVEL",
     "card": "Lvl {{level}}",
+    "reset": "RESET PROGRESS",
     "close": "CLOSE"
   },
   "game": {
@@ -110,7 +111,10 @@
     "opponentJoined": "Opponent connected!",
     "join": "Join",
     "cancel": "Cancel",
-    "close": "CLOSE"
+    "close": "CLOSE",
+    "nextLevel": "NEXT LEVEL",
+    "retry": "TRY AGAIN",
+    "exit": "EXIT TO LOBBY"
   },
   "leaderboard": {
     "title": "LEADERBOARDS",

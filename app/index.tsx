@@ -27,6 +27,7 @@ import { ProfileService } from '../src/services/ProfileService';
 import { services, IBattleService } from '../src/shared/IServiceRegistry';
 import { LeaderboardEntry, LeaderboardGroup } from '../src/domain/types';
 import { getAvatarEmoji, AVATARS } from '../src/shared/avatars';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -281,6 +282,59 @@ export default function HomeScreen() {
     router.push('/game');
   };
 
+  const handleResetLevels = () => {
+    audio.playSound('click');
+    haptics.selection();
+    Alert.alert(
+      language === 'vi' ? 'Đặt lại tiến trình' : 'Reset Level Progress',
+      language === 'vi'
+        ? 'Bạn có chắc chắn muốn đặt lại tiến trình chơi về Cấp 1 không? Xu và Hồ sơ của bạn sẽ được giữ nguyên.'
+        : 'Are you sure you want to reset your level progress back to Level 1? Your coins and profile will be kept.',
+      [
+        { text: t('settings.resetAlertCancel'), style: 'cancel' },
+        {
+          text: t('settings.resetAlertSuccess'),
+          style: 'destructive',
+          onPress: async () => {
+            // Clear profile level progress
+            useProfileStore.setState({
+              levelProgress: {},
+              seasonPassStars: 0,
+            });
+            // Reset gameStore currentLevel
+            useGameStore.setState({ currentLevel: 1 });
+
+            // Sync player self score to 0 levels
+            const profile = useProfileStore.getState();
+            try {
+               await LeaderboardService.savePlayerScore(
+                 profile.displayName || 'Player',
+                 0,
+                 0,
+                 profile.coins,
+                 999,
+                 profile.avatarId,
+                 profile.country
+               );
+            } catch (e) {
+               console.warn(e);
+            }
+
+            // Close levels modal
+            setLevelsVisible(false);
+
+            Alert.alert(
+              language === 'vi' ? 'Đã làm mới' : 'Reset Complete',
+              language === 'vi'
+                ? 'Đã đặt lại tiến trình cấp độ về Cấp 1.'
+                : 'Level progress has been reset to Level 1.'
+            );
+          },
+        },
+      ]
+    );
+  };
+
   const confirmReset = () => {
     audio.playSound('click');
     haptics.selection();
@@ -292,8 +346,26 @@ export default function HomeScreen() {
         {
           text: t('settings.resetAlertSuccess'),
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
+            // Close settings modal
+            setSettingsVisible(false);
+
+            // Reset game state
             resetGame();
+
+            // Reset profile store
+            useProfileStore.getState().resetProfile();
+
+            // Clear local leaderboard score
+            try {
+              await AsyncStorage.removeItem('wsp_player_self_score');
+              await AsyncStorage.removeItem('wsp_leaderboard_players');
+              await AsyncStorage.removeItem('wsp_leaderboard_groups');
+              await AsyncStorage.removeItem('wsp_leaderboard_friend_stats');
+            } catch (e) {
+              console.warn(e);
+            }
+
             Alert.alert(t('settings.resetClearedTitle'), t('settings.resetClearedDesc'));
           },
         },
@@ -705,6 +777,16 @@ export default function HomeScreen() {
             <ScrollView style={styles.levelsScroll} contentContainerStyle={styles.levelsScrollContent}>
               <View style={styles.levelsGrid}>{renderLevels()}</View>
             </ScrollView>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.resetLevelsButton,
+                pressed && styles.pressedScaleSmall,
+              ]}
+              onPress={handleResetLevels}
+            >
+              <Text style={styles.resetLevelsButtonText}>{t('levels.reset')}</Text>
+            </Pressable>
 
             <Pressable
               style={({ pressed }) => [
@@ -1396,12 +1478,12 @@ const styles = StyleSheet.create({
   levelsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     width: '100%',
   },
   levelCard: {
-    width: (SCREEN_WIDTH * 0.88 - 72) / 4,
-    height: (SCREEN_WIDTH * 0.88 - 72) / 4,
+    width: (SCREEN_WIDTH * 0.88 - 60) / 3,
+    height: (SCREEN_WIDTH * 0.88 - 60) / 3,
     backgroundColor: 'rgba(99, 102, 241, 0.08)',
     borderWidth: 1.5,
     borderColor: 'rgba(99, 102, 241, 0.3)',
@@ -1409,6 +1491,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     margin: 5,
     borderRadius: 16,
+  },
+  resetLevelsButton: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    width: '100%',
+    padding: 14,
+    borderRadius: 18,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  resetLevelsButtonText: {
+    color: '#ef4444',
+    fontWeight: '800',
+    fontSize: 15,
+    letterSpacing: 1,
   },
   levelCardText: {
     color: '#818cf8',

@@ -46,6 +46,7 @@
   "levels": {
     "title": "CHỌN CẤP ĐỘ",
     "card": "Cấp {{level}}",
+    "reset": "ĐẶT LẠI TIẾN TRÌNH",
     "close": "ĐỒNG Ý"
   },
   "game": {
@@ -110,7 +111,10 @@
     "opponentJoined": "Đối thủ đã vào phòng!",
     "join": "Vào",
     "cancel": "Hủy",
-    "close": "ĐỒNG Ý"
+    "close": "ĐỒNG Ý",
+    "nextLevel": "MÀN TIẾP THEO",
+    "retry": "CHƠI LẠI",
+    "exit": "THOÁT RA"
   },
   "leaderboard": {
     "title": "BẢNG XẾP HẠNG",
