@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -11,6 +11,7 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
+  AppState,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useGameStore } from '../src/presentation/store/gameStore';
@@ -24,8 +25,9 @@ import { GameBackground } from '../src/presentation/components/GameBackground';
 import { useTranslation } from '../src/shared/i18n';
 import { LeaderboardService } from '../src/services/LeaderboardService';
 import { ProfileService } from '../src/services/ProfileService';
+import { SocialService } from '../src/services/SocialService';
 import { services, IBattleService } from '../src/shared/IServiceRegistry';
-import { LeaderboardEntry, LeaderboardGroup } from '../src/domain/types';
+import { LeaderboardEntry, LeaderboardGroup, FriendProfile, FriendRequest, BattleInvite } from '../src/domain/types';
 import { getAvatarEmoji, AVATARS } from '../src/shared/avatars';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -94,6 +96,20 @@ export default function HomeScreen() {
   const [joinGroupVisible, setJoinGroupVisible] = useState(false);
   const [joinGroupCode, setJoinGroupCode] = useState('');
 
+  // ─── Social Hub states ─────────────────────────────────────────────────
+  const [socialHubVisible, setSocialHubVisible] = useState(false);
+  const [socialTab, setSocialTab] = useState<'friends' | 'search' | 'requests' | 'invites'>('friends');
+  const [friendsList, setFriendsList] = useState<FriendProfile[]>([]);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [battleInvites, setBattleInvites] = useState<BattleInvite[]>([]);
+  const [playerSearchQuery, setPlayerSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<FriendProfile[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [socialLoading, setSocialLoading] = useState(false);
+  const [incomingInviteCount, setIncomingInviteCount] = useState(0);
+  const [requestCount, setRequestCount] = useState(0);
+  const appStateRef = useRef(AppState.currentState);
+
   // Battle Hub states
   const [battleHubVisible, setBattleHubVisible] = useState(false);
   const [battleStep, setBattleStep] = useState<'menu' | 'botDiff' | 'roomWait' | 'roomJoin'>('menu');
@@ -130,6 +146,40 @@ export default function HomeScreen() {
       }
     }
   }, [leaderboardVisible, leaderboardTab, leaderboardSortBy, selectedGroupId]);
+
+  // Online presence: mark online on mount, offline on unmount
+  useEffect(() => {
+    SocialService.setOnline();
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (appStateRef.current !== 'active' && nextState === 'active') {
+        SocialService.setOnline();
+      } else if (nextState === 'background' || nextState === 'inactive') {
+        SocialService.setOffline();
+      }
+      appStateRef.current = nextState;
+    });
+    return () => {
+      SocialService.setOffline();
+      sub.remove();
+    };
+  }, []);
+
+  // Poll incoming friend requests + battle invites badge counts every 30s
+  useEffect(() => {
+    const pollBadges = async () => {
+      try {
+        const [reqs, invites] = await Promise.all([
+          SocialService.getIncomingRequests(),
+          SocialService.getIncomingBattleInvites(),
+        ]);
+        setRequestCount(reqs.length);
+        setIncomingInviteCount(invites.length);
+      } catch (e) {}
+    };
+    pollBadges();
+    const interval = setInterval(pollBadges, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Simulate opponent joining the host room after 3.5 seconds
   useEffect(() => {
@@ -515,6 +565,103 @@ export default function HomeScreen() {
     return `${entry.score} pts`;
   };
 
+  // ─── Social Handlers ─────────────────────────────────────────────────
+  const loadSocialData = async () => {
+    setSocialLoading(true);
+    try {
+      const [friends, reqs, invites] = await Promise.all([
+        SocialService.getFriends(),
+        SocialService.getIncomingRequests(),
+        SocialService.getIncomingBattleInvites(),
+      ]);
+      setFriendsList(friends);
+      setFriendRequests(reqs);
+      setBattleInvites(invites);
+      setRequestCount(reqs.length);
+      setIncomingInviteCount(invites.length);
+    } catch (e) {
+      console.warn('Failed to load social data', e);
+    } finally {
+      setSocialLoading(false);
+    }
+  };
+
+  const handlePlayerSearch = async (q: string) => {
+    setPlayerSearchQuery(q);
+    if (q.trim().length < 2) { setSearchResults([]); return; }
+    setSearchLoading(true);
+    try {
+      const results = await SocialService.searchPlayers(q);
+      setSearchResults(results);
+    } catch (e) {
+      setSearchResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const handleSendFriendRequest = async (toUid: string, name: string) => {
+    try {
+      await SocialService.sendFriendRequest(toUid);
+      Alert.alert('✅ Đã gửi', `Lời mời kết bạn đến ${name} đã được gửi!`);
+    } catch (e: any) {
+      if (e?.message === 'already_friends') Alert.alert('Thông báo', `Bạn và ${name} đã là bạn bè rồi.`);
+      else if (e?.message === 'request_already_sent') Alert.alert('Thông báo', 'Bạn đã gửi lời mời rồi.');
+      else Alert.alert('Lỗi', 'Không thể gửi lời mời. Thử lại sau.');
+    }
+  };
+
+  const handleAcceptRequest = async (req: FriendRequest) => {
+    try {
+      await SocialService.acceptFriendRequest(req.id);
+      Alert.alert('✅ Đã chấp nhận', `Bạn và ${req.fromDisplayName} đã trở thành bạn bè!`);
+      await loadSocialData();
+    } catch (e) {
+      Alert.alert('Lỗi', 'Không thể chấp nhận. Thử lại sau.');
+    }
+  };
+
+  const handleRejectRequest = async (req: FriendRequest) => {
+    await SocialService.rejectFriendRequest(req.id);
+    await loadSocialData();
+  };
+
+  const handleRemoveFriend = (friend: FriendProfile) => {
+    Alert.alert(
+      'Xóa bạn',
+      `Xóa ${friend.displayName} khỏi danh sách bạn bè?`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa', style: 'destructive',
+          onPress: async () => {
+            await SocialService.removeFriend(friend.uid);
+            await loadSocialData();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleSendBattleInvite = async (friend: FriendProfile) => {
+    try {
+      const battleService = services.get<IBattleService>('Battle');
+      const session = await battleService.createRoom();
+      await SocialService.sendBattleInvite(friend.uid, session.roomId);
+      Alert.alert('🎮 Lời mời gửi!', `Đã mời ${friend.displayName} vào trận đấu! Họ sẽ nhận thông báo.`);
+    } catch (e) {
+      Alert.alert('Lỗi', 'Không thể gửi lời mời battle.');
+    }
+  };
+
+  const handleRespondBattleInvite = async (invite: BattleInvite, accept: boolean) => {
+    await SocialService.respondBattleInvite(invite.id, accept);
+    if (accept) {
+      Alert.alert('🎮 Battle!', `Đã chấp nhận lời mời từ ${invite.fromDisplayName}! Mã phòng: ${invite.roomId}`);
+    }
+    await loadSocialData();
+  };
+
   return (
     <View style={styles.container}>
       {/* Premium Ambient Background */}
@@ -703,6 +850,35 @@ export default function HomeScreen() {
             <View style={styles.menuButtonContent}>
               <Ionicons name="settings" size={18} color="#cbd5e1" />
               <Text style={styles.menuButtonText}>{t('home.settings')}</Text>
+            </View>
+          </Pressable>
+
+          {/* Social Hub Button */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.menuButton,
+              pressed && styles.pressedScaleSmall,
+            ]}
+            onPress={() => {
+              audio.playSound('click');
+              haptics.selection();
+              setSocialHubVisible(true);
+              setSocialTab('friends');
+              loadSocialData();
+            }}
+          >
+            <View style={styles.menuButtonContent}>
+              <View>
+                <Ionicons name="people" size={18} color="#a78bfa" />
+                {(requestCount > 0 || incomingInviteCount > 0) && (
+                  <View style={styles.socialBadge}>
+                    <Text style={styles.socialBadgeText}>
+                      {requestCount + incomingInviteCount}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[styles.menuButtonText, { color: '#a78bfa' }]}>Bạn bè</Text>
             </View>
           </Pressable>
         </View>
@@ -1241,6 +1417,161 @@ export default function HomeScreen() {
                 <Text style={styles.dialogCreateBtnText}>Tham gia</Text>
               </Pressable>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL 5.5: SOCIAL HUB */}
+      <Modal visible={socialHubVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.glassModalContent, { height: '82%', width: '94%' }]}>
+            <Text style={styles.modalTitle}>👥 Bạn bè</Text>
+
+            {/* Social Tabs */}
+            <View style={[styles.leaderboardTabs, { marginBottom: 8 }]}>
+              {(['friends', 'search', 'requests', 'invites'] as const).map((tab) => (
+                <Pressable
+                  key={tab}
+                  style={[styles.leaderboardTab, socialTab === tab && styles.leaderboardTabActive]}
+                  onPress={() => setSocialTab(tab)}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={[styles.leaderboardTabText, socialTab === tab && styles.leaderboardTabTextActive]}>
+                      {tab === 'friends' ? '👤 Bạn' : tab === 'search' ? '🔍 Tìm' : tab === 'requests' ? '✉️ Mời' : '⚔️ Battle'}
+                    </Text>
+                    {tab === 'requests' && requestCount > 0 && (
+                      <View style={styles.socialBadge}><Text style={styles.socialBadgeText}>{requestCount}</Text></View>
+                    )}
+                    {tab === 'invites' && incomingInviteCount > 0 && (
+                      <View style={styles.socialBadge}><Text style={styles.socialBadgeText}>{incomingInviteCount}</Text></View>
+                    )}
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+
+            {socialLoading ? (
+              <ActivityIndicator color="#a78bfa" style={{ marginTop: 40 }} />
+            ) : (
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
+
+                {/* ─── FRIENDS TAB ─── */}
+                {socialTab === 'friends' && (
+                  friendsList.length === 0 ? (
+                    <View style={styles.emptyView}>
+                      <Ionicons name="people-outline" size={40} color="#475569" style={{ marginBottom: 8 }} />
+                      <Text style={styles.emptyText}>{'Ch\u01b0a c\u00f3 b\u1ea1n b\u00e8 n\u00e0o.\nH\u00e3y t\u00ecm ki\u1ebfm v\u00e0 g\u1eedi l\u1eddi m\u1eddi k\u1ebft b\u1ea1n!'}</Text>
+                    </View>
+                  ) : friendsList.map((friend) => (
+                    <View key={friend.uid} style={styles.socialFriendRow}>
+                      <Text style={styles.rankAvatarEmoji}>{getAvatarEmoji(friend.avatarId)}</Text>
+                      <View style={{ flex: 1, marginLeft: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.rankColName} numberOfLines={1}>{friend.displayName}</Text>
+                          <View style={[styles.onlineDot, { backgroundColor: friend.isOnline ? '#22c55e' : '#475569' }]} />
+                        </View>
+                        <Text style={{ color: '#64748b', fontSize: 11 }}>Lv.{friend.highestLevel} • {friend.totalScore} pts</Text>
+                      </View>
+                      <Pressable style={styles.socialActionBtn} onPress={() => handleSendBattleInvite(friend)}>
+                        <Ionicons name="game-controller-outline" size={14} color="#fbbf24" />
+                      </Pressable>
+                      <Pressable style={[styles.socialActionBtn, { backgroundColor: 'rgba(239,68,68,0.12)', marginLeft: 4 }]} onPress={() => handleRemoveFriend(friend)}>
+                        <Ionicons name="person-remove-outline" size={14} color="#f87171" />
+                      </Pressable>
+                    </View>
+                  ))
+                )}
+
+                {/* ─── SEARCH TAB ─── */}
+                {socialTab === 'search' && (
+                  <View>
+                    <TextInput
+                      style={[styles.dialogInput, { marginHorizontal: 0, marginBottom: 12 }]}
+                      placeholder="Tìm kiếm theo tên người chơi..."
+                      placeholderTextColor="#475569"
+                      value={playerSearchQuery}
+                      onChangeText={handlePlayerSearch}
+                      autoCapitalize="none"
+                    />
+                    {searchLoading && <ActivityIndicator color="#a78bfa" />}
+                    {searchResults.map((player) => (
+                      <View key={player.uid} style={styles.socialFriendRow}>
+                        <Text style={styles.rankAvatarEmoji}>{getAvatarEmoji(player.avatarId)}</Text>
+                        <View style={{ flex: 1, marginLeft: 8 }}>
+                          <Text style={styles.rankColName} numberOfLines={1}>{player.displayName}</Text>
+                          <Text style={{ color: '#64748b', fontSize: 11 }}>Lv.{player.highestLevel} • {player.totalScore} pts</Text>
+                        </View>
+                        <Pressable
+                          style={[styles.socialActionBtn, { backgroundColor: 'rgba(99,102,241,0.18)' }]}
+                          onPress={() => handleSendFriendRequest(player.uid, player.displayName)}
+                        >
+                          <Ionicons name="person-add-outline" size={14} color="#a5b4fc" />
+                        </Pressable>
+                      </View>
+                    ))}
+                    {!searchLoading && playerSearchQuery.length >= 2 && searchResults.length === 0 && (
+                      <Text style={[styles.emptyText, { marginTop: 20 }]}>Không tìm thấy người chơi nào.</Text>
+                    )}
+                  </View>
+                )}
+
+                {/* ─── REQUESTS TAB ─── */}
+                {socialTab === 'requests' && (
+                  friendRequests.length === 0 ? (
+                    <View style={styles.emptyView}>
+                      <Ionicons name="mail-outline" size={40} color="#475569" style={{ marginBottom: 8 }} />
+                      <Text style={styles.emptyText}>Không có lời mời kết bạn nào.</Text>
+                    </View>
+                  ) : friendRequests.map((req) => (
+                    <View key={req.id} style={styles.socialFriendRow}>
+                      <Text style={styles.rankAvatarEmoji}>{getAvatarEmoji(req.fromAvatarId)}</Text>
+                      <View style={{ flex: 1, marginLeft: 8 }}>
+                        <Text style={styles.rankColName} numberOfLines={1}>{req.fromDisplayName}</Text>
+                        <Text style={{ color: '#64748b', fontSize: 11 }}>Muốn kết bạn với bạn</Text>
+                      </View>
+                      <Pressable style={styles.socialActionBtn} onPress={() => handleAcceptRequest(req)}>
+                        <Ionicons name="checkmark" size={16} color="#22c55e" />
+                      </Pressable>
+                      <Pressable style={[styles.socialActionBtn, { backgroundColor: 'rgba(239,68,68,0.12)', marginLeft: 4 }]} onPress={() => handleRejectRequest(req)}>
+                        <Ionicons name="close" size={16} color="#f87171" />
+                      </Pressable>
+                    </View>
+                  ))
+                )}
+
+                {/* ─── BATTLE INVITES TAB ─── */}
+                {socialTab === 'invites' && (
+                  battleInvites.length === 0 ? (
+                    <View style={styles.emptyView}>
+                      <Ionicons name="game-controller-outline" size={40} color="#475569" style={{ marginBottom: 8 }} />
+                      <Text style={styles.emptyText}>Không có lời mời battle nào.</Text>
+                    </View>
+                  ) : battleInvites.map((invite) => (
+                    <View key={invite.id} style={styles.socialFriendRow}>
+                      <Ionicons name="game-controller" size={24} color="#fbbf24" />
+                      <View style={{ flex: 1, marginLeft: 8 }}>
+                        <Text style={styles.rankColName} numberOfLines={1}>{invite.fromDisplayName}</Text>
+                        <Text style={{ color: '#64748b', fontSize: 11 }}>Mã phòng: {invite.roomId}</Text>
+                      </View>
+                      <Pressable style={styles.socialActionBtn} onPress={() => handleRespondBattleInvite(invite, true)}>
+                        <Ionicons name="checkmark" size={16} color="#22c55e" />
+                      </Pressable>
+                      <Pressable style={[styles.socialActionBtn, { backgroundColor: 'rgba(239,68,68,0.12)', marginLeft: 4 }]} onPress={() => handleRespondBattleInvite(invite, false)}>
+                        <Ionicons name="close" size={16} color="#f87171" />
+                      </Pressable>
+                    </View>
+                  ))
+                )}
+
+              </ScrollView>
+            )}
+
+            <Pressable
+              style={({ pressed }) => [styles.closeButton, pressed && styles.pressedScaleSmall, { marginTop: 8 }]}
+              onPress={() => setSocialHubVisible(false)}
+            >
+              <Text style={styles.closeButtonText}>Đóng</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -2356,5 +2687,47 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '800',
     fontSize: 13,
+  },
+
+  // ─── Social System Styles ───────────────────────────────────────────────
+  socialBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    backgroundColor: '#ef4444',
+    borderRadius: 8,
+    minWidth: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  socialBadgeText: {
+    color: '#fff',
+    fontSize: 8,
+    fontWeight: '900',
+    lineHeight: 14,
+  },
+  socialFriendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  socialActionBtn: {
+    backgroundColor: 'rgba(251, 191, 36, 0.12)',
+    borderRadius: 8,
+    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  onlineDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
 });

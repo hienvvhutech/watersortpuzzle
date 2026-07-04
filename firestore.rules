@@ -11,13 +11,32 @@ service cloud.firestore {
     match /groups/{groupId} {
       allow read: if request.auth != null && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
       allow create: if request.auth != null;
-      allow update, delete: if request.auth != null && resource.data.creatorId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.ownerUid == request.auth.uid;
     }
     
     // Subcollection: Group members
     match /groups/{groupId}/members/{memberUid} {
       allow read: if request.auth != null && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
-      allow write: if request.auth != null && (request.auth.uid == memberUid || get(/databases/$(database)/documents/groups/$(groupId)).data.creatorId == request.auth.uid);
+      allow write: if request.auth != null && (request.auth.uid == memberUid || get(/databases/$(database)/documents/groups/$(groupId)).data.ownerUid == request.auth.uid);
+    }
+
+    // Friend requests: sender or recipient can read; only sender can create; only recipient can update status
+    match /friendRequests/{requestId} {
+      allow read: if request.auth != null &&
+        (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+      allow create: if request.auth != null && request.resource.data.fromUid == request.auth.uid;
+      allow update: if request.auth != null && resource.data.toUid == request.auth.uid;
+      allow delete: if request.auth != null &&
+        (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+    }
+
+    // Battle invites: sender or recipient can read/update; only sender can create
+    match /battleInvites/{inviteId} {
+      allow read: if request.auth != null &&
+        (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+      allow create: if request.auth != null && request.resource.data.fromUid == request.auth.uid;
+      allow update: if request.auth != null &&
+        (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
     }
   }
 }

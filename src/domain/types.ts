@@ -254,5 +254,51 @@ export interface PlayerProfile {
   createdAt: number;
   updatedAt: number;
   isProfileCreated: boolean;
+  // Social fields
+  isOnline?: boolean;
+  lastSeenAt?: string;
+  friends?: string[];       // array of friend UIDs
+  joinedGroups?: string[];  // array of group IDs
 }
 
+// ─── Social System Types ───────────────────────────────────────────────
+
+/**
+ * A friend's public profile snapshot used in friend lists / search results.
+ */
+export interface FriendProfile {
+  uid: string;
+  displayName: string;
+  avatarId: string;
+  country?: string;
+  highestLevel: number;
+  totalScore: number;
+  isOnline?: boolean;
+  lastSeenAt?: string;
+}
+
+/**
+ * A friend request document stored in Firestore.
+ */
+export interface FriendRequest {
+  id: string;
+  fromUid: string;
+  toUid: string;
+  fromDisplayName: string;
+  fromAvatarId: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: string;
+}
+
+/**
+ * A battle invite sent from one friend to another.
+ */
+export interface BattleInvite {
+  id: string;
+  fromUid: string;
+  toUid: string;
+  fromDisplayName: string;
+  roomId: string;
+  status: 'pending' | 'accepted' | 'declined' | 'expired';
+  createdAt: string;
+}
