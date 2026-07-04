@@ -21,12 +21,15 @@ import { useHaptics } from '../src/presentation/hooks/useHaptics';
 import { THEMES } from '../src/presentation/themes';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { GameBackground } from '../src/presentation/components/GameBackground';
+import { useTranslation } from '../src/shared/i18n';
+import { DifficultyService } from '../src/services/DifficultyService';
 
 export default function GameScreen() {
   const router = useRouter();
   const audio = useAudio();
   const haptics = useHaptics();
   const { width: windowWidth } = useWindowDimensions();
+  const { t } = useTranslation();
 
   // Zustand Store variables & actions
   const {
@@ -43,6 +46,8 @@ export default function GameScreen() {
     addCoins,
     isPlaying,
     lastWinReward,
+    carryoverTimeBonus,
+    difficulty,
   } = useGameStore();
 
   // Settings Store for dynamic toggles
@@ -78,20 +83,42 @@ export default function GameScreen() {
   const [victoryModalVisible, setVictoryModalVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [sessionSummaryVisible, setSessionSummaryVisible] = useState(false);
+  const [timeoutModalVisible, setTimeoutModalVisible] = useState(false);
   const [earnedStars, setEarnedStars] = useState(3);
   const [earnedCoins, setEarnedCoins] = useState(50);
   const [elapsedTime, setElapsedTime] = useState(0);
 
-  // Elapsed timer effect for Ghost Replay
+  // Time calculations
+  const baseTime = DifficultyService.getTargetTimeForDifficulty(difficulty);
+  const timeLimit = baseTime + carryoverTimeBonus;
+  const timeLeft = Math.max(0, timeLimit - elapsedTime);
+
+  // Countdown timer effect
   useEffect(() => {
-    if (isPlaying && !isWon) {
+    if (isPlaying && !isWon && !timeoutModalVisible) {
       setElapsedTime(0);
       const interval = setInterval(() => {
-        setElapsedTime((prev) => prev + 1);
+        setElapsedTime((prev) => {
+          const next = prev + 1;
+          if (next >= timeLimit) {
+            clearInterval(interval);
+            audio.playSound('error');
+            haptics.error();
+            setTimeoutModalVisible(true);
+          }
+          return next;
+        });
       }, 1000);
       return () => clearInterval(interval);
     }
-  }, [isPlaying, isWon, currentLevel]);
+  }, [isPlaying, isWon, currentLevel, timeLimit, timeoutModalVisible]);
+
+  // Warning vibrations when time is running out (<= 10 seconds)
+  useEffect(() => {
+    if (timeLeft <= 10 && timeLeft > 0 && isPlaying && !isWon && !timeoutModalVisible) {
+      haptics.selection();
+    }
+  }, [timeLeft]);
 
   // When won, show victory modal after a delay for the confetti to fall
   useEffect(() => {
@@ -155,6 +182,22 @@ export default function GameScreen() {
     haptics.selection();
     restartLevel();
     setHint(null);
+  };
+
+  const handleTimeoutRetry = () => {
+    audio.playSound('click');
+    haptics.selection();
+    setTimeoutModalVisible(false);
+    restartLevel();
+    setElapsedTime(0);
+  };
+
+  const handleTimeoutHome = () => {
+    audio.playSound('click');
+    haptics.selection();
+    setTimeoutModalVisible(false);
+    resetSessionTelemetry();
+    router.replace('/');
   };
 
   const handleUndo = () => {
@@ -271,9 +314,15 @@ export default function GameScreen() {
               <Ionicons name="arrow-back" size={20} color="#cbd5e1" />
             </Pressable>
 
-            {/* Absolute Centered Level Title */}
+            {/* Absolute Centered Level Title and Timer */}
             <View style={styles.absoluteCenteredTitle} pointerEvents="none">
-              <Text style={styles.hudLevelText}>LEVEL {currentLevel}</Text>
+              <Text style={styles.hudLevelText}>{t('home.level', { level: currentLevel })}</Text>
+              <Text style={[
+                styles.hudTimerText, 
+                timeLeft <= 10 && styles.hudTimerWarningText
+              ]}>
+                {t('game.timeRemaining', { time: timeLeft })}
+              </Text>
             </View>
 
             {/* Right Section: Coins and Settings */}
@@ -303,7 +352,7 @@ export default function GameScreen() {
             <View style={styles.hintBannerContent}>
               <Ionicons name="bulb" size={18} color="#fbbf24" style={{ marginRight: 8 }} />
               <Text style={styles.hintBannerText}>
-                Hint: Tube {hint.from + 1} ➔ Tube {hint.to + 1}
+                {t('game.hintTitle')}: {t('game.hintDesc', { from: hint.from + 1, to: hint.to + 1 })}
               </Text>
             </View>
           </View>
@@ -316,7 +365,7 @@ export default function GameScreen() {
 
         {/* Region 3: Moves Counter & Ghost Replay (5%) */}
         <View style={styles.movesRegion}>
-          <Text style={styles.movesText}>Moves: {history.length}</Text>
+          <Text style={styles.movesText}>{t('game.moves', { moves: history.length })}</Text>
           {profileProgress && profileProgress.bestMoves > 0 && (
             <View style={styles.ghostContainer}>
               <FontAwesome5 name="ghost" size={12} color="#a78bfa" style={{ marginRight: 6 }} />
@@ -352,7 +401,7 @@ export default function GameScreen() {
                   style={{ marginRight: 6 }}
                 />
                 <Text style={[styles.dockButtonText, history.length === 0 && styles.disabledText]}>
-                  Undo {history.length > 0 ? `(${history.length})` : ''}
+                  {t('game.undo')} {history.length > 0 ? `(${history.length})` : ''}
                 </Text>
               </View>
             </Pressable>
@@ -366,7 +415,7 @@ export default function GameScreen() {
             >
               <View style={styles.dockButtonContent}>
                 <Ionicons name="refresh" size={18} color="#e2e8f0" style={{ marginRight: 6 }} />
-                <Text style={styles.dockButtonText}>Restart</Text>
+                <Text style={styles.dockButtonText}>{t('game.restart')}</Text>
               </View>
             </Pressable>
 
@@ -379,7 +428,7 @@ export default function GameScreen() {
             >
               <View style={styles.dockButtonContent}>
                 <Ionicons name="bulb" size={18} color="#e2e8f0" style={{ marginRight: 6 }} />
-                <Text style={styles.dockButtonText}>Hint</Text>
+                <Text style={styles.dockButtonText}>{t('game.hint')}</Text>
                 <View style={styles.dockCostBadge}>
                   <Text style={styles.dockCostBadgeText}>50</Text>
                 </View>
@@ -405,7 +454,7 @@ export default function GameScreen() {
                   color={hasAddedTube ? '#64748b' : '#e2e8f0'}
                   style={{ marginRight: 4 }}
                 />
-                <Text style={[styles.dockButtonText, hasAddedTube && styles.disabledText]}>Tube</Text>
+                <Text style={[styles.dockButtonText, hasAddedTube && styles.disabledText]}>{t('game.tube')}</Text>
                 <View style={[styles.dockCostBadge, hasAddedTube && styles.dockCostBadgeUsed]}>
                   <Text style={styles.dockCostBadgeText}>{hasAddedTube ? 'USED' : '100'}</Text>
                 </View>
@@ -420,11 +469,11 @@ export default function GameScreen() {
       <Modal visible={settingsVisible} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.glassModalContent}>
-            <Text style={styles.modalTitle}>SETTINGS</Text>
+            <Text style={styles.modalTitle}>{t('settings.title')}</Text>
 
             <View style={styles.settingsBox}>
               <View style={styles.settingRow}>
-                <Text style={styles.settingLabel}>Sound Effects</Text>
+                <Text style={styles.settingLabel}>{t('settings.sound')}</Text>
                 <Switch
                   value={soundEnabled}
                   onValueChange={setSoundEnabled}
@@ -434,7 +483,7 @@ export default function GameScreen() {
               </View>
 
               <View style={styles.settingRow}>
-                <Text style={styles.settingLabel}>Background Music</Text>
+                <Text style={styles.settingLabel}>{t('settings.music')}</Text>
                 <Switch
                   value={musicEnabled}
                   onValueChange={setMusicEnabled}
@@ -444,7 +493,7 @@ export default function GameScreen() {
               </View>
 
               <View style={styles.settingRow}>
-                <Text style={styles.settingLabel}>Haptics & Vibration</Text>
+                <Text style={styles.settingLabel}>{t('settings.vibration')}</Text>
                 <Switch
                   value={vibrationEnabled}
                   onValueChange={setVibrationEnabled}
@@ -465,138 +514,116 @@ export default function GameScreen() {
                 setSettingsVisible(false);
               }}
             >
-              <Text style={styles.closeButtonText}>CLOSE</Text>
+              <Text style={styles.closeButtonText}>{t('settings.close')}</Text>
             </Pressable>
           </View>
         </View>
       </Modal>
 
-      {/* MODAL: MOCK REWARDED AD LOADING */}
-      <Modal visible={adLoading} transparent animationType="fade">
-        <View style={styles.adOverlay}>
-          <View style={styles.adContent}>
-            <ActivityIndicator size="large" color="#10b981" />
-            <Text style={styles.adText}>
-              Loading free {adAction === 'hint' ? 'Hint' : 'Tube'}...
-            </Text>
-            <Text style={styles.adSubtext}>Simulating ad playback...</Text>
+      {/* MODAL: TIME OUT (Game Over Screen) */}
+      <Modal visible={timeoutModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.glassModalContent}>
+            <Ionicons name="time" size={60} color="#ef4444" style={{ marginBottom: 15 }} />
+            <Text style={[styles.victoryTitle, { color: '#ef4444' }]}>{t('game.timeout.title')}</Text>
+            <Text style={styles.victorySubtitle}>{t('game.timeout.desc')}</Text>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.victoryBtn,
+                pressed && styles.pressedScale,
+                { backgroundColor: '#3b82f6', shadowColor: '#3b82f6', marginTop: 25 }
+              ]}
+              onPress={handleTimeoutRetry}
+            >
+              <Text style={styles.victoryBtnText}>{t('game.timeout.restart')}</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.closeButton,
+                pressed && styles.pressedScaleSmall,
+                { marginTop: 15 }
+              ]}
+              onPress={handleTimeoutHome}
+            >
+              <Text style={styles.closeButtonText}>{t('game.timeout.exit')}</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
 
-      {/* MODAL: VICTORY OVERLAY */}
-      <Modal visible={victoryModalVisible} transparent animationType="slide">
+      {/* MODAL: VICTORY SUMMARY OVERLAY */}
+      <Modal visible={victoryModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.victoryContent}>
-            <Text style={styles.victoryTitle}>VICTORY!</Text>
+          <View style={styles.glassModalContent}>
+            {/* Crown Decoration */}
+            <View style={styles.crownGlow}>
+              <FontAwesome5 name="crown" size={36} color="#fbbf24" />
+            </View>
+
+            {/* Victory Title */}
+            <Text style={styles.victoryTitle}>{t('game.victory.title')}</Text>
+            <Text style={styles.victorySubtitle}>{t('game.victory.moves', { moves: history.length })}</Text>
 
             {/* Stars Row */}
             <View style={styles.starsRow}>
-              <Ionicons
-                name="star"
-                size={42}
-                color="#fbbf24"
-                style={earnedStars < 1 && styles.emptyStar}
-              />
-              <Ionicons
-                name="star"
-                size={58}
-                color="#fbbf24"
-                style={[styles.centerStar, earnedStars < 2 && styles.emptyStar]}
-              />
-              <Ionicons
-                name="star"
-                size={42}
-                color="#fbbf24"
-                style={earnedStars < 3 && styles.emptyStar}
-              />
+              <Ionicons name="star" size={32} color={earnedStars >= 1 ? '#fbbf24' : '#475569'} style={{ marginHorizontal: 4 }} />
+              <Ionicons name="star" size={44} color={earnedStars >= 2 ? '#fbbf24' : '#475569'} style={{ marginHorizontal: 4, marginTop: -8 }} />
+              <Ionicons name="star" size={32} color={earnedStars >= 3 ? '#fbbf24' : '#475569'} style={{ marginHorizontal: 4 }} />
             </View>
 
-            <Text style={styles.victorySub}>Level {currentLevel} Completed!</Text>
-
-            {/* Satisfying Score Breakdown */}
+            {/* Score & Coins Earned Breakdown */}
             {lastWinReward && (
               <View style={styles.scoreBreakdownContainer}>
                 <View style={styles.breakdownRow}>
                   <Text style={styles.breakdownLabel}>Base Score</Text>
-                  <Text style={styles.breakdownValue}>+{lastWinReward.baseScore}</Text>
+                  <Text style={styles.breakdownValue}>{lastWinReward.baseScore}</Text>
                 </View>
+
                 {lastWinReward.timeBonus > 0 && (
                   <View style={styles.breakdownRow}>
-                    <Text style={styles.breakdownLabel}>Time Bonus</Text>
+                    <Text style={styles.breakdownLabel}>{t('game.victory.timeBonus')}</Text>
                     <Text style={styles.breakdownValue}>+{lastWinReward.timeBonus}</Text>
                   </View>
                 )}
+
                 {lastWinReward.perfectBonus > 0 && (
                   <View style={styles.breakdownRow}>
-                    <Text style={styles.breakdownLabel}>Perfect Bonus</Text>
+                    <Text style={styles.breakdownLabel}>{t('game.victory.perfectBonus')}</Text>
                     <Text style={styles.breakdownValue}>+{lastWinReward.perfectBonus}</Text>
                   </View>
                 )}
-                {lastWinReward.noHintBonus > 0 && (
+
+                {lastWinReward.newPerfectStreakCombo > 1 && (
                   <View style={styles.breakdownRow}>
-                    <Text style={styles.breakdownLabel}>No Hint Bonus</Text>
-                    <Text style={styles.breakdownValue}>+{lastWinReward.noHintBonus}</Text>
+                    <Text style={styles.breakdownLabel}>{t('game.victory.streakBonus')} (x{lastWinReward.comboMultiplier.toFixed(1)})</Text>
+                    <Text style={styles.breakdownValue}>+{lastWinReward.perfectBonus}</Text>
                   </View>
                 )}
-                {lastWinReward.comboMultiplier > 1.0 && (
-                  <View style={styles.breakdownRow}>
-                    <Text style={[styles.breakdownLabel, { color: '#a78bfa', fontWeight: '900' }]}>
-                      Perfect Win Combo
-                    </Text>
-                    <Text style={[styles.breakdownValue, { color: '#a78bfa', fontWeight: '900' }]}>
-                      x{lastWinReward.comboMultiplier.toFixed(1)}
-                    </Text>
-                  </View>
-                )}
+
                 <View style={styles.breakdownDivider} />
-                <View style={[styles.breakdownRow, { marginTop: 4 }]}>
-                  <Text style={[styles.breakdownLabel, { fontSize: 16, color: '#f8fafc', fontWeight: '900' }]}>
-                    TOTAL SCORE
-                  </Text>
-                  <Text style={[styles.breakdownValue, { fontSize: 18, color: '#f8fafc', fontWeight: '900' }]}>
-                    {lastWinReward.totalScore}
-                  </Text>
+
+                {/* Coins Summary */}
+                <View style={styles.victoryCoinsRow}>
+                  <View style={styles.victoryCoinsContainer}>
+                    <FontAwesome5 name="coins" size={16} color="#fbbf24" style={{ marginRight: 6 }} />
+                    <Text style={styles.victoryCoinsVal}>+{lastWinReward.totalCoins}</Text>
+                  </View>
+                  <Text style={styles.victoryScoreVal}>{lastWinReward.totalScore} pts</Text>
                 </View>
               </View>
             )}
 
-            {/* Decoupled Rewards Summary */}
-            <View style={styles.rewardsSummaryRow}>
-              <View style={styles.rewardSummaryBadge}>
-                <FontAwesome5 name="coins" size={13} color="#fbbf24" style={{ marginRight: 5 }} />
-                <Text style={[styles.rewardSummaryText, { color: '#fbbf24' }]}>
-                  +{lastWinReward?.totalCoins || earnedCoins}
-                </Text>
-              </View>
-
-              <View style={styles.rewardSummaryBadge}>
-                <Ionicons name="sparkles" size={13} color="#3b82f6" style={{ marginRight: 5 }} />
-                <Text style={[styles.rewardSummaryText, { color: '#60a5fa' }]}>
-                  +{lastWinReward?.totalXp || 50} XP
-                </Text>
-              </View>
-
-              <View style={styles.rewardSummaryBadge}>
-                <Ionicons name="star" size={13} color="#a78bfa" style={{ marginRight: 5 }} />
-                <Text style={[styles.rewardSummaryText, { color: '#c084fc' }]}>
-                  +{lastWinReward?.starsEarned || 1} Stars
-                </Text>
-              </View>
-            </View>
-
-            {/* Main Next Level CTA */}
+            {/* Continue Button */}
             <Pressable
               style={({ pressed }) => [
-                styles.nextLevelButton,
+                styles.victoryBtn,
                 pressed && styles.pressedScale,
               ]}
               onPress={handleNextLevel}
             >
-              <View style={styles.nextLevelButtonContent}>
-                <Text style={styles.nextLevelText}>NEXT LEVEL </Text>
-                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
-              </View>
+              <Text style={styles.victoryBtnText}>{t('game.victory.next')}</Text>
             </Pressable>
 
             {/* Victory Action Row */}
@@ -612,7 +639,7 @@ export default function GameScreen() {
                 }}
               >
                 <Ionicons name="home" size={18} color="#cbd5e1" style={{ marginRight: 6 }} />
-                <Text style={styles.victorySubButtonText}>Home</Text>
+                <Text style={styles.victorySubButtonText}>{t('game.victory.home')}</Text>
               </Pressable>
 
               <Pressable
@@ -626,7 +653,7 @@ export default function GameScreen() {
                 }}
               >
                 <Ionicons name="refresh" size={18} color="#cbd5e1" style={{ marginRight: 6 }} />
-                <Text style={styles.victorySubButtonText}>Replay</Text>
+                <Text style={styles.victorySubButtonText}>{t('game.victory.replay')}</Text>
               </Pressable>
             </View>
           </View>
@@ -639,15 +666,15 @@ export default function GameScreen() {
           <View style={styles.sessionSummaryContent}>
             <View style={styles.sessionSummaryHeader}>
               <Ionicons name="trophy" size={26} color="#fbbf24" style={{ marginRight: 10 }} />
-              <Text style={styles.sessionSummaryTitle}>SESSION RECAP</Text>
+              <Text style={styles.sessionSummaryTitle}>{t('game.session.title')}</Text>
             </View>
-            <Text style={styles.sessionSummarySub}>Here is your progress from this session:</Text>
+            <Text style={styles.sessionSummarySub}>{t('game.session.desc')}</Text>
 
             <View style={styles.sessionStatsGrid}>
               <View style={styles.sessionStatCard}>
                 <Ionicons name="checkmark-circle" size={18} color="#10b981" />
                 <Text style={styles.sessionStatVal}>{sessionLevelsPlayed}</Text>
-                <Text style={styles.sessionStatLabel}>Levels Won</Text>
+                <Text style={styles.sessionStatLabel}>{t('game.session.levelsWon')}</Text>
               </View>
 
               <View style={styles.sessionStatCard}>
@@ -655,61 +682,61 @@ export default function GameScreen() {
                 <Text style={styles.sessionStatVal}>
                   {sessionLevelsPlayed > 0 ? Math.floor(sessionTotalTime / sessionLevelsPlayed) : 0}s
                 </Text>
-                <Text style={styles.sessionStatLabel}>Avg Time</Text>
+                <Text style={styles.sessionStatLabel}>{t('game.session.avgTime')}</Text>
               </View>
 
               <View style={styles.sessionStatCard}>
                 <Ionicons name="ribbon" size={18} color="#fbbf24" />
                 <Text style={styles.sessionStatVal}>{sessionGoldCrowns}</Text>
-                <Text style={styles.sessionStatLabel}>Gold Crowns</Text>
+                <Text style={styles.sessionStatLabel}>{t('game.session.goldCrowns')}</Text>
               </View>
 
               <View style={styles.sessionStatCard}>
                 <FontAwesome5 name="coins" size={16} color="#fbbf24" />
                 <Text style={styles.sessionStatVal}>+{sessionCoinsEarned}</Text>
-                <Text style={styles.sessionStatLabel}>Coins Earned</Text>
+                <Text style={styles.sessionStatLabel}>{t('game.session.coinsEarned')}</Text>
               </View>
 
               <View style={styles.sessionStatCard}>
                 <Ionicons name="sparkles" size={18} color="#60a5fa" />
                 <Text style={styles.sessionStatVal}>+{sessionXpEarned}</Text>
-                <Text style={styles.sessionStatLabel}>XP Gained</Text>
+                <Text style={styles.sessionStatLabel}>{t('game.session.xpGained')}</Text>
               </View>
 
               <View style={styles.sessionStatCard}>
                 <Ionicons name="star" size={18} color="#c084fc" />
                 <Text style={styles.sessionStatVal}>+{sessionStarsEarned}</Text>
-                <Text style={styles.sessionStatLabel}>Season Stars</Text>
+                <Text style={styles.sessionStatLabel}>{t('game.session.seasonStars')}</Text>
               </View>
 
               <View style={styles.sessionStatCard}>
                 <Ionicons name="flash" size={18} color="#f43f5e" />
                 <Text style={styles.sessionStatVal}>{sessionNewRecords}</Text>
-                <Text style={styles.sessionStatLabel}>New Records</Text>
+                <Text style={styles.sessionStatLabel}>{t('game.session.newRecords')}</Text>
               </View>
 
               <View style={styles.sessionStatCard}>
                 <Ionicons name="medal" size={18} color="#10b981" />
                 <Text style={styles.sessionStatVal}>{sessionPerfectWins}</Text>
-                <Text style={styles.sessionStatLabel}>Perfect Plays</Text>
+                <Text style={styles.sessionStatLabel}>{t('game.session.perfectPlays')}</Text>
               </View>
             </View>
 
             <View style={styles.sessionActions}>
               <Pressable
                 style={({ pressed }) => [
-                  styles.sessionExitButton,
+                  styles.sessionExitBtn,
                   pressed && styles.pressedScale,
                 ]}
                 onPress={handleExitToHome}
               >
-                <Text style={styles.sessionExitButtonText}>EXIT TO MENU</Text>
+                <Text style={styles.sessionExitBtnText}>{t('game.session.exit')}</Text>
               </Pressable>
 
               <Pressable
                 style={({ pressed }) => [
-                  styles.sessionResumeButton,
-                  pressed && styles.pressedScaleSmall,
+                  styles.sessionResumeBtn,
+                  pressed && styles.pressedScale,
                 ]}
                 onPress={() => {
                   audio.playSound('click');
@@ -717,12 +744,24 @@ export default function GameScreen() {
                   setSessionSummaryVisible(false);
                 }}
               >
-                <Text style={styles.sessionResumeButtonText}>KEEP PLAYING</Text>
+                <Text style={styles.sessionResumeBtnText}>{t('game.session.resume')}</Text>
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
+
+      {/* Ad Loader Screen overlay */}
+      {adLoading && (
+        <View style={styles.adOverlay}>
+          <View style={styles.adBox}>
+            <ActivityIndicator size="large" color="#10b981" style={{ marginBottom: 15 }} />
+            <Text style={styles.adTitle}>Loading Video Reward...</Text>
+            <Text style={styles.adDesc}>Simulating ad for free {adAction} reward</Text>
+          </View>
+        </View>
+      )}
+
     </View>
   );
 }
@@ -761,48 +800,57 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
   },
+  hudIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+  },
   absoluteCenteredTitle: {
     position: 'absolute',
     left: 0,
     right: 0,
     top: 0,
     bottom: 0,
-    alignItems: 'center',
     justifyContent: 'center',
-    zIndex: -1,
-  },
-  hudIconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   hudLevelText: {
+    color: '#f8fafc',
     fontSize: 16,
     fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: 2,
-    textShadowColor: 'rgba(99, 102, 241, 0.5)',
+    letterSpacing: 1.5,
+  },
+  hudTimerText: {
+    color: '#818cf8',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  hudTimerWarningText: {
+    color: '#ef4444',
+    textShadowColor: 'rgba(239, 68, 68, 0.6)',
     textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 6,
+    textShadowRadius: 8,
   },
   hudRightGroup: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   hudCoinsBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: 'rgba(251, 191, 36, 0.1)',
+    borderWidth: 1.2,
+    borderColor: 'rgba(251, 191, 36, 0.25)',
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 12,
   },
   hudCoinsText: {
     color: '#fbbf24',
@@ -811,30 +859,32 @@ const styles = StyleSheet.create({
   },
   hintBanner: {
     position: 'absolute',
-    top: '11%',
-    alignSelf: 'center',
-    backgroundColor: 'rgba(251, 191, 36, 0.12)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(251, 191, 36, 0.4)',
-    borderRadius: 20,
-    paddingVertical: 6,
-    paddingHorizontal: 18,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 3,
-    zIndex: 20,
+    top: '12%',
+    left: 20,
+    right: 20,
+    zIndex: 10,
+    alignItems: 'center',
   },
   hintBannerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+    borderWidth: 1.5,
+    borderColor: '#fbbf24',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    shadowColor: '#fbbf24',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 6,
   },
   hintBannerText: {
     color: '#fbbf24',
-    fontWeight: '800',
     fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   boardRegion: {
     height: '70%',
@@ -847,12 +897,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   movesText: {
-    color: '#cbd5e1',
     fontSize: 15,
     fontWeight: '800',
-    textAlign: 'center',
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
+    color: '#94a3b8',
+    letterSpacing: 1,
+  },
+  ghostContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.15)',
+  },
+  ghostText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#a78bfa',
   },
   toolbarRegion: {
     height: '15%',
@@ -860,134 +924,103 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   glassDock: {
-    height: 52,
+    height: 72,
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
     borderWidth: 1.2,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    borderRadius: 16,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 24,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'space-between',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
   },
   dockButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
     flex: 1,
-    height: '100%',
-  },
-  dockButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    height: 52,
     justifyContent: 'center',
-    position: 'relative',
-    paddingHorizontal: 4,
-  },
-  dockButtonText: {
-    color: '#f1f5f9',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  disabledText: {
-    color: '#64748b',
+    alignItems: 'center',
+    borderRadius: 16,
   },
   disabledButton: {
-    opacity: 0.35,
+    opacity: 0.4,
   },
-  dockDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  dockCostBadge: {
-    position: 'absolute',
-    top: -16,
-    right: -10,
-    backgroundColor: '#fbbf24',
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 5,
-    borderWidth: 0.8,
-    borderColor: '#d97706',
-  },
-  dockCostBadgeUsed: {
-    backgroundColor: '#475569',
-    borderColor: '#334155',
-  },
-  dockCostBadgeText: {
-    color: '#1e1b4b',
-    fontSize: 7,
-    fontWeight: '900',
+  pressedScaleSmall: {
+    transform: [{ scale: 0.95 }],
+    opacity: 0.85,
   },
   pressedScale: {
     transform: [{ scale: 0.94 }],
     opacity: 0.9,
   },
-  pressedScaleSmall: {
-    transform: [{ scale: 0.96 }],
-    opacity: 0.85,
+  dockButtonContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+    width: '100%',
   },
-  adOverlay: {
+  dockButtonText: {
+    color: '#cbd5e1',
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 4,
+    letterSpacing: 0.5,
+  },
+  disabledText: {
+    color: '#64748b',
+  },
+  dockDivider: {
+    width: 1.2,
+    height: 32,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  dockCostBadge: {
+    position: 'absolute',
+    top: -12,
+    right: 4,
+    backgroundColor: '#fbbf24',
+    borderRadius: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+  },
+  dockCostBadgeText: {
+    color: '#0f172a',
+    fontSize: 8,
+    fontWeight: '900',
+  },
+  dockCostBadgeUsed: {
+    backgroundColor: '#475569',
+  },
+  modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(3, 7, 18, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  adContent: {
-    backgroundColor: '#0f172a',
-    padding: 32,
+  glassModalContent: {
+    width: '88%',
+    backgroundColor: 'rgba(15, 23, 42, 0.94)',
     borderRadius: 28,
+    padding: 24,
     alignItems: 'center',
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.08)',
-    width: '82%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.5,
     shadowRadius: 15,
-  },
-  adText: {
-    color: '#f8fafc',
-    fontSize: 16,
-    fontWeight: '800',
-    textAlign: 'center',
-    marginTop: 22,
-  },
-  adSubtext: {
-    color: '#64748b',
-    fontSize: 13,
-    marginTop: 6,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(3, 7, 18, 0.82)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  glassModalContent: {
-    width: 320,
-    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-    borderRadius: 30,
-    padding: 28,
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
-    elevation: 8,
+    elevation: 10,
   },
   modalTitle: {
     fontSize: 22,
     fontWeight: '900',
+    letterSpacing: 3,
     color: '#FFFFFF',
-    letterSpacing: 2,
-    marginBottom: 24,
+    marginBottom: 20,
     textShadowColor: 'rgba(99, 102, 241, 0.4)',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 8,
@@ -996,14 +1029,15 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    marginBottom: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.04)',
+    marginBottom: 16,
   },
   settingRow: {
     flexDirection: 'row',
+    width: '100%',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 14,
@@ -1011,167 +1045,79 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255, 255, 255, 0.05)',
   },
   settingLabel: {
-    color: '#e2e8f0',
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#cbd5e1',
   },
   closeButton: {
-    backgroundColor: '#3b82f6',
-    paddingVertical: 14,
-    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     width: '100%',
+    padding: 15,
+    borderRadius: 18,
     alignItems: 'center',
-    shadowColor: '#3b82f6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   closeButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '900',
-    fontSize: 16,
-    letterSpacing: 1.5,
+    color: '#cbd5e1',
+    fontWeight: '800',
+    fontSize: 15,
+    letterSpacing: 1,
   },
-  victoryContent: {
-    width: 330,
-    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-    borderRadius: 32,
-    padding: 32,
+  crownGlow: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 12,
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 10,
+    borderColor: 'rgba(251, 191, 36, 0.2)',
+    shadowColor: '#fbbf24',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 6,
   },
   victoryTitle: {
-    fontSize: 40,
+    fontSize: 28,
     fontWeight: '900',
-    color: '#f43f5e',
-    letterSpacing: 4,
-    marginBottom: 20,
-    textShadowColor: 'rgba(244, 63, 94, 0.35)',
+    color: '#fbbf24',
+    letterSpacing: 3,
+    textShadowColor: 'rgba(251, 191, 36, 0.3)',
     textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 12,
+    textShadowRadius: 8,
+  },
+  victorySubtitle: {
+    fontSize: 14,
+    color: '#94a3b8',
+    fontWeight: '700',
+    marginTop: 6,
+    marginBottom: 16,
   },
   starsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 26,
+    height: 60,
+    marginBottom: 20,
   },
-  emptyStar: {
-    opacity: 0.2,
-  },
-  centerStar: {
-    marginHorizontal: 14,
-    top: -8,
-  },
-  victorySub: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#f1f5f9',
-    letterSpacing: 1.5,
-    marginBottom: 8,
-  },
-  victoryCoinsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 32,
-  },
-  victoryCoins: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#fbbf24',
-  },
-  nextLevelButton: {
-    backgroundColor: '#10b981',
-    paddingHorizontal: 40,
-    paddingVertical: 18,
-    borderRadius: 24,
-    width: '100%',
-    alignItems: 'center',
-    shadowColor: '#10b981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  nextLevelText: {
-    color: '#FFFFFF',
-    fontWeight: '900',
-    fontSize: 18,
-    letterSpacing: 1.5,
-  },
-  nextLevelButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  victoryActionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginTop: 16,
-  },
-  victorySubButton: {
-    flex: 0.48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 20,
-    paddingVertical: 12,
-  },
-  victorySubButtonText: {
-    color: '#cbd5e1',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  // Ghost Replay styles
-  ghostContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(167, 139, 250, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(167, 139, 250, 0.2)',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginLeft: 12,
-  },
-  ghostText: {
-    color: '#c084fc',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  // Score Breakdown styles
   scoreBreakdownContainer: {
     width: '100%',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
     borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.04)',
+    marginBottom: 24,
   },
   breakdownRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginVertical: 3,
+    marginVertical: 4,
   },
   breakdownLabel: {
-    color: '#94a3b8',
+    color: '#64748b',
     fontSize: 13,
     fontWeight: '600',
   },
@@ -1182,45 +1128,78 @@ const styles = StyleSheet.create({
   },
   breakdownDivider: {
     height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginVertical: 6,
-    width: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    marginVertical: 10,
   },
-  // Decoupled Rewards styles
-  rewardsSummaryRow: {
+  victoryCoinsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '100%',
-    marginBottom: 24,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 2,
   },
-  rewardSummaryBadge: {
+  victoryCoinsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
   },
-  rewardSummaryText: {
-    fontSize: 13,
+  victoryCoinsVal: {
+    color: '#fbbf24',
+    fontSize: 18,
     fontWeight: '900',
   },
-  // Session Summary Modal styles
+  victoryScoreVal: {
+    color: '#f8fafc',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  victoryBtn: {
+    backgroundColor: '#10b981',
+    width: '100%',
+    padding: 16,
+    borderRadius: 20,
+    alignItems: 'center',
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+    marginBottom: 14,
+  },
+  victoryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+  victoryActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  victorySubButton: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    paddingVertical: 12,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 5,
+  },
+  victorySubButtonText: {
+    color: '#cbd5e1',
+    fontSize: 13,
+    fontWeight: '800',
+  },
   sessionSummaryContent: {
-    width: 340,
-    backgroundColor: 'rgba(15, 23, 42, 0.96)',
-    borderRadius: 32,
+    width: '90%',
+    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+    borderRadius: 28,
     padding: 24,
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.6,
-    shadowRadius: 24,
-    elevation: 12,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   sessionSummaryHeader: {
     flexDirection: 'row',
@@ -1232,15 +1211,12 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#fbbf24',
     letterSpacing: 2,
-    textShadowColor: 'rgba(251, 191, 36, 0.35)',
-    textShadowRadius: 8,
   },
   sessionSummarySub: {
-    fontSize: 13,
-    color: '#94a3b8',
-    textAlign: 'center',
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '600',
     marginBottom: 20,
-    fontWeight: '500',
   },
   sessionStatsGrid: {
     flexDirection: 'row',
@@ -1251,61 +1227,92 @@ const styles = StyleSheet.create({
   },
   sessionStatCard: {
     width: '48%',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: 'rgba(255, 255, 255, 0.04)',
     borderRadius: 16,
-    padding: 10,
+    padding: 12,
+    marginVertical: 4,
     alignItems: 'center',
-    marginVertical: 5,
   },
   sessionStatVal: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '900',
     color: '#f8fafc',
-    marginVertical: 3,
+    marginVertical: 4,
   },
   sessionStatLabel: {
     fontSize: 10,
     color: '#64748b',
     fontWeight: '700',
-    textTransform: 'uppercase',
   },
   sessionActions: {
+    flexDirection: 'row',
     width: '100%',
+    justifyContent: 'space-between',
   },
-  sessionExitButton: {
-    backgroundColor: '#3b82f6',
+  sessionExitBtn: {
+    flex: 1.2,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
     paddingVertical: 14,
-    borderRadius: 20,
-    width: '100%',
+    borderRadius: 18,
     alignItems: 'center',
-    marginBottom: 10,
-    shadowColor: '#3b82f6',
+    marginRight: 8,
+  },
+  sessionExitBtnText: {
+    color: '#ef4444',
+    fontWeight: '900',
+    fontSize: 13,
+  },
+  sessionResumeBtn: {
+    flex: 2,
+    backgroundColor: '#10b981',
+    paddingVertical: 14,
+    borderRadius: 18,
+    alignItems: 'center',
+    shadowColor: '#10b981',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowRadius: 6,
   },
-  sessionExitButtonText: {
+  sessionResumeBtnText: {
     color: '#FFFFFF',
     fontWeight: '900',
     fontSize: 14,
     letterSpacing: 1,
   },
-  sessionResumeButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    paddingVertical: 12,
-    borderRadius: 18,
-    width: '100%',
+  adOverlay: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(3, 7, 18, 0.95)',
+    justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 100,
   },
-  sessionResumeButtonText: {
-    color: '#cbd5e1',
-    fontWeight: '800',
-    fontSize: 13,
-    letterSpacing: 0.5,
+  adBox: {
+    backgroundColor: '#1e293b',
+    padding: 30,
+    borderRadius: 24,
+    alignItems: 'center',
+    width: '80%',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  adTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  adDesc: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });

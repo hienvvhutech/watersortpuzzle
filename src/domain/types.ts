@@ -118,6 +118,7 @@ export interface GameState {
   isPlaying: boolean;
   isWon: boolean;
   lastWinReward: WinRewardResult | null;
+  carryoverTimeBonus: number; // Carryover time in seconds from previous level
 }
 
 export type CrownType = 'none' | 'bronze' | 'silver' | 'gold';
@@ -195,5 +196,29 @@ export interface ProfileState {
   sessionPerfectWins: number;
   sessionGoldCrowns: number;
   sessionNewRecords: number;
+}
+
+export interface LeaderboardEntry {
+  userId: string;
+  username: string;
+  level: number;
+  score: number;
+  coins: number;
+  bestTime: number; // in seconds
+  rank?: number;
+}
+
+export interface LeaderboardGroup {
+  id: string;
+  name: string;
+  friends: string[];
+}
+
+export interface BattleSession {
+  roomId: string;
+  opponentName: string;
+  opponentProgress: number; // 0 to 100
+  isHost: boolean;
+  status: 'waiting' | 'active' | 'won' | 'lost';
 }
 

@@ -31,6 +31,11 @@ export const useSettingsStore = create<SettingsStore>()(
     {
       name: 'wsp-settings',
       storage: createJSONStorage(() => AsyncStorage),
+      version: 1,
+      migrate: (persistedState: any, version: number) => {
+        // Implement migrations here when updating production state schemas
+        return persistedState as any;
+      },
     }
   )
 );

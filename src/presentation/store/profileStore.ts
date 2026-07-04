@@ -6,6 +6,7 @@ import { EconomyService } from '../../services/EconomyService';
 import { XPService } from '../../services/XPService';
 import { RewardService } from '../../services/RewardService';
 import { DifficultyService } from '../../services/DifficultyService';
+import { LeaderboardService } from '../../services/LeaderboardService';
 
 // Default initial state
 const defaultState = {
@@ -332,6 +333,22 @@ export const useProfileStore = create<ProfileStore>()(
           sessionNewRecords: state.sessionNewRecords + (isNewRecord ? 1 : 0),
         }));
 
+        // Save score to leaderboard asynchronously
+        const currentProfile = get();
+        const completedLevelsList = Object.keys(nextLevelProgress).map(Number);
+        const highestCompleted = completedLevelsList.length > 0 ? Math.max(...completedLevelsList) : 0;
+        const totalScore = Object.values(nextLevelProgress).reduce((acc, curr) => acc + (curr.bestScore || 0), 0);
+        const fastestTimes = Object.values(nextLevelProgress).map(curr => curr.fastestTime).filter(t => t > 0);
+        const bestTime = fastestTimes.length > 0 ? Math.min(...fastestTimes) : 999;
+
+        LeaderboardService.savePlayerScore(
+          'Player',
+          highestCompleted,
+          totalScore,
+          currentProfile.coins,
+          bestTime
+        ).catch(e => console.warn('[ProfileStore] Failed to save score to leaderboard', e));
+
         // 7. Update achievements dynamically
         get().incrementAchievementProgress('first_victory', 1);
         if (!hintsUsed) {
@@ -425,6 +442,11 @@ export const useProfileStore = create<ProfileStore>()(
     {
       name: 'water-sort-profile-storage',
       storage: createJSONStorage(() => SaveService.createSecureStorage('profileStore')),
+      version: 1,
+      migrate: (persistedState: any, version: number) => {
+        // Implement migrations here when updating production state schemas
+        return persistedState as any;
+      },
     }
   )
 );

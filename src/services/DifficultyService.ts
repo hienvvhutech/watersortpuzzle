@@ -26,13 +26,13 @@ export const DifficultyService = {
       case 'easy':
         return 45;
       case 'normal':
-        return 90;
+        return 60;
       case 'hard':
-        return 180;
+        return 75;
       case 'expert':
-        return 300;
+        return 90;
       case 'impossible':
-        return 420;
+        return 100;
     }
   },
 

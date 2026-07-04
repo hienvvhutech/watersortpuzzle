@@ -7,6 +7,7 @@ import { solve } from '../../domain/solver';
 import { useProfileStore } from './profileStore';
 import { SaveService } from '../../services/SaveService';
 import { DifficultyService } from '../../services/DifficultyService';
+import { services, IAnalyticsService } from '../../shared/IServiceRegistry';
 
 interface GameActions {
   startLevel: (levelId: number) => void;
@@ -74,6 +75,7 @@ const defaultState: GameState = {
   isPlaying: false,
   isWon: false,
   lastWinReward: null,
+  carryoverTimeBonus: 0,
 };
 
 
@@ -101,26 +103,51 @@ export const useGameStore = create<GameStore>()(
         const solution = solve(level.tubes, TUBE_CAPACITY, 2000);
         const par = solution ? solution.length : 12;
 
-        set((state) => ({
-          currentLevel: levelId,
-          difficulty,
-          tubes: level.tubes.map((t) => [...t]),
-          initialTubes: level.tubes.map((t) => [...t]),
-          history: [],
-          isPlaying: true,
-          isWon: false,
-          selectedTubeIndex: null,
-          parMoves: par,
-          hasAddedTube: false,
-          levelStartTime: Date.now(),
-          stats: {
-            ...state.stats,
-            gamesPlayed: state.stats.gamesPlayed + 1,
-            hintUsed: 0,
-            undoUsed: 0,
-          },
-          lastWinReward: null,
-        }));
+        services.get<IAnalyticsService>('Analytics').trackEvent('level_start', { level: levelId, difficulty });
+
+        set((state) => {
+          let nextCarryoverBonus = 0;
+          if (levelId === state.currentLevel + 1 && state.isWon) {
+            const completedDiff = state.difficulty;
+            const completedBaseTime = DifficultyService.getTargetTimeForDifficulty(completedDiff);
+            const completedTimeLimit = completedBaseTime + state.carryoverTimeBonus;
+            const timeSpent = Math.floor((Date.now() - state.levelStartTime) / 1000);
+            const remainingTime = completedTimeLimit - timeSpent;
+            if (remainingTime > 0) {
+              let maxBonus = 5;
+              switch (difficulty) {
+                case 'easy': maxBonus = 5; break;
+                case 'normal': maxBonus = 4; break;
+                case 'hard': maxBonus = 3; break;
+                case 'expert': maxBonus = 2; break;
+                case 'impossible': maxBonus = 1; break;
+              }
+              nextCarryoverBonus = Math.min(remainingTime, maxBonus);
+            }
+          }
+
+          return {
+            currentLevel: levelId,
+            difficulty,
+            tubes: level.tubes.map((t) => [...t]),
+            initialTubes: level.tubes.map((t) => [...t]),
+            history: [],
+            isPlaying: true,
+            isWon: false,
+            selectedTubeIndex: null,
+            parMoves: par,
+            hasAddedTube: false,
+            levelStartTime: Date.now(),
+            carryoverTimeBonus: nextCarryoverBonus,
+            stats: {
+              ...state.stats,
+              gamesPlayed: state.stats.gamesPlayed + 1,
+              hintUsed: 0,
+              undoUsed: 0,
+            },
+            lastWinReward: null,
+          };
+        });
       },
 
       restartLevel: () => {
@@ -129,6 +156,8 @@ export const useGameStore = create<GameStore>()(
 
         // Increment restarts / consecutive fails in profile store
         useProfileStore.getState().incrementConsecutiveFails();
+
+        services.get<IAnalyticsService>('Analytics').trackEvent('level_restart', { level: get().currentLevel });
 
         set((state) => ({
           tubes: initialTubes.map((t) => [...t]),
@@ -201,6 +230,13 @@ export const useGameStore = create<GameStore>()(
 
             const movesTaken = get().history.length + 1; // current move counts
             
+            services.get<IAnalyticsService>('Analytics').trackEvent('level_win', {
+              level: get().currentLevel,
+              moves: movesTaken,
+              time: timeSpent,
+              streak: updatedStats.currentStreak
+            });
+
             // Trigger profile progression calculation
             winResult = useProfileStore.getState().handleLevelWin(
               get().currentLevel,
@@ -259,6 +295,8 @@ export const useGameStore = create<GameStore>()(
           },
         }));
 
+        services.get<IAnalyticsService>('Analytics').trackEvent('use_undo', { level: get().currentLevel });
+
         return true;
       },
 
@@ -274,6 +312,8 @@ export const useGameStore = create<GameStore>()(
           selectedTubeIndex: null,
         }));
         
+        services.get<IAnalyticsService>('Analytics').trackEvent('add_tube', { level: get().currentLevel });
+
         return true;
       },
 
@@ -293,6 +333,8 @@ export const useGameStore = create<GameStore>()(
               hintUsed: state.stats.hintUsed + 1,
             },
           }));
+
+          services.get<IAnalyticsService>('Analytics').trackEvent('use_hint', { level: get().currentLevel });
 
           return {
             from: nextMove.fromTubeIndex,
@@ -425,6 +467,15 @@ export const useGameStore = create<GameStore>()(
     {
       name: 'wsp-game-state',
       storage: createJSONStorage(() => SaveService.createSecureStorage('gameStore')),
+      version: 1,
+      migrate: (persistedState: any, version: number) => {
+        if (version === 0) {
+          if (persistedState && typeof persistedState === 'object') {
+            persistedState.carryoverTimeBonus = persistedState.carryoverTimeBonus || 0;
+          }
+        }
+        return persistedState as any;
+      },
     }
   )
 );
