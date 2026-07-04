@@ -183,10 +183,10 @@ export const TubeComponent: React.FC<TubeComponentProps> = ({
             </ClipPath>
             {/* Premium glossy linear gradient highlight */}
             <LinearGradient id="glassGradient" x1="0" y1="0" x2="1" y2="0">
-              <Stop offset="0" stopColor="rgba(255, 255, 255, 0.22)" />
-              <Stop offset="0.25" stopColor="rgba(255, 255, 255, 0.08)" />
-              <Stop offset="0.75" stopColor="rgba(255, 255, 255, 0.02)" />
-              <Stop offset="1" stopColor="rgba(255, 255, 255, 0.35)" />
+              <Stop offset="0" stopColor="#ffffff" stopOpacity={0.22} />
+              <Stop offset="0.25" stopColor="#ffffff" stopOpacity={0.08} />
+              <Stop offset="0.75" stopColor="#ffffff" stopOpacity={0.02} />
+              <Stop offset="1" stopColor="#ffffff" stopOpacity={0.35} />
             </LinearGradient>
           </Defs>
 
