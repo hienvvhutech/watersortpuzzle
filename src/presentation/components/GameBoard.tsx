@@ -5,6 +5,7 @@ import Animated, {
   useAnimatedStyle,
   withTiming,
   withSequence,
+  SharedValue,
 } from 'react-native-reanimated';
 import TubeComponent from './TubeComponent';
 import { useGameStore } from '../store/gameStore';
@@ -16,9 +17,9 @@ import { SplashEffect, TubeBubbles } from './ParticleEffect';
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 interface TubeWrapperProps {
-  tx: Animated.SharedValue<number>;
-  ty: Animated.SharedValue<number>;
-  rot: Animated.SharedValue<number>;
+  tx: SharedValue<number>;
+  ty: SharedValue<number>;
+  rot: SharedValue<number>;
   pos: { x: number; y: number };
   tubeWidth: number;
   tubeHeight: number;

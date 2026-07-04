@@ -3,6 +3,8 @@ import { getAuth, Auth, GoogleAuthProvider, OAuthProvider, linkWithCredential, s
 import { Firestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getDatabase, Database } from 'firebase/database';
 
+import { Platform } from 'react-native';
+
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -25,9 +27,11 @@ if (isConfigured) {
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     auth = getAuth(app);
     db = initializeFirestore(app, {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager(),
-      }),
+      localCache: persistentLocalCache(
+        Platform.OS === 'web'
+          ? { tabManager: persistentMultipleTabManager() }
+          : {}
+      ),
     });
     rtdb = getDatabase(app);
   } catch (e) {

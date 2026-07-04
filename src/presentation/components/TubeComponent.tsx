@@ -10,6 +10,7 @@ import Animated, {
   Easing,
   runOnJS,
   useAnimatedProps,
+  SharedValue,
 } from 'react-native-reanimated';
 import { SKINS, SkinConfig } from '../themes';
 import { TubeSkin } from '../../domain/types';
@@ -22,7 +23,7 @@ interface WaterLayerProps {
   color: string;
   slotIndex: number;
   isTop: boolean;
-  wavePhase: Animated.SharedValue<number>;
+  wavePhase: SharedValue<number>;
 }
 
 // 1.3x Scaled dimensions (65x214 tube layout)
