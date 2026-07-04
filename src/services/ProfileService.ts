@@ -28,13 +28,14 @@ export const ProfileService = {
     // Regex supporting Unicode letters, numbers, single spaces, dots, underscores, hyphens
     // Using \p{L} and \p{N} for full multi-language/Vietnamese support.
     try {
-      const validPattern = /^[\p{L}\p{N}]+([\s_.-]+[\p{L}\p{N}]+)*$/u;
+      // Compile dynamically to prevent parser-level crash on older JS engines!
+      const validPattern = new RegExp('^[\\p{L}\\p{N}]+([\\s_.-]+[\\p{L}\\p{N}]+)*$', 'u');
       if (!validPattern.test(trimmed)) {
         return 'validation.nameInvalidChars';
       }
     } catch (e) {
       // Fallback regex if runtime environment does not support Unicode regex properties
-      const fallbackPattern = /^[a-zA-Z0-9À-ỹ]+([\s_.-]+[a-zA-Z0-9À-ỹ]+)*$/;
+      const fallbackPattern = /^[a-zA-Z0-9À-ỹ_.-]+([\s][a-zA-Z0-9À-ỹ_.-]+)*$/;
       if (!fallbackPattern.test(trimmed)) {
         return 'validation.nameInvalidChars';
       }
