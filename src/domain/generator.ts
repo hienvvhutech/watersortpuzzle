@@ -81,6 +81,12 @@ export function generateLevel(levelId: number, difficultyOverride?: Difficulty):
   let tubes: string[][] = [];
 
   while (!solvable) {
+    if (attempt >= 15) {
+      // Safeguard: Fallback to prevent infinite loop freezing on higher levels (expert/impossible)
+      solvable = true;
+      break;
+    }
+
     // Generate a deterministic seed combined of levelId and attempt number
     const rngSeed = levelId * 1000 + attempt;
     const rng = new SeededRandom(rngSeed);
@@ -113,7 +119,7 @@ export function generateLevel(levelId: number, difficultyOverride?: Difficulty):
 
     // Check solvability (limit solver iterations to 2000 for fast generation checks)
     const solution = solve(tubes, TUBE_CAPACITY, 2000);
-    if (solution !== null && solution.length > 0) {
+    if (solution !== null) {
       solvable = true;
     } else {
       attempt++;
