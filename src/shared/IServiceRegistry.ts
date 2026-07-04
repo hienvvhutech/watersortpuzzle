@@ -11,6 +11,7 @@ import { LocalProfileRepository } from '../services/LocalProfileRepository';
 import { FirestoreProfileRepository } from '../services/FirestoreProfileRepository';
 import { FirestoreLeaderboardRepository } from '../services/FirestoreLeaderboardRepository';
 import { FirestoreSocialRepository } from '../services/FirestoreSocialRepository';
+import { FirebaseRTDBBattleService } from '../services/FirebaseRTDBBattleService';
 import { isConfigured } from '../services/firebase';
 
 /**
@@ -24,17 +25,18 @@ class ServiceRegistry {
     // Register Phase 2, 3, 4 & 5 services
     this.registry.set('Analytics', new ConsoleAnalyticsService());
     this.registry.set('Error', new ConsoleErrorService());
-    this.registry.set('Battle', new LocalBattleService());
     
     if (isConfigured) {
       this.registry.set('Profile', new FirestoreProfileRepository());
       this.registry.set('Leaderboard', new FirestoreLeaderboardRepository());
       this.registry.set('Social', new FirestoreSocialRepository());
+      this.registry.set('Battle', new FirebaseRTDBBattleService());
     } else {
       this.registry.set('Profile', new LocalProfileRepository());
       this.registry.set('Leaderboard', new LocalLeaderboardRepository());
       // Social requires Firebase — graceful no-op when offline
       this.registry.set('Social', new FirestoreSocialRepository());
+      this.registry.set('Battle', new LocalBattleService());
     }
   }
 

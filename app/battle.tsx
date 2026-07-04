@@ -74,8 +74,13 @@ export default function BattleScreen() {
       setOpponentName(t(`battle.botDiff${botDifficulty.charAt(0).toUpperCase() + botDifficulty.slice(1)}` as any));
       battleService.startBattle(botDifficulty).catch(e => console.warn(e));
     } else {
-      setOpponentName('Speedy_Sorter');
-      battleService.startBattle('medium').catch(e => console.warn(e));
+      battleService.startBattle('medium')
+        .then((session) => {
+          if (session && session.opponentName) {
+            setOpponentName(session.opponentName);
+          }
+        })
+        .catch(e => console.warn(e));
     }
   };
 

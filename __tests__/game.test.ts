@@ -21,6 +21,17 @@ jest.mock('firebase/firestore', () => ({
   setDoc: jest.fn(),
 }));
 
+jest.mock('firebase/database', () => ({
+  getDatabase: jest.fn(),
+  ref: jest.fn(),
+  set: jest.fn(),
+  get: jest.fn(),
+  update: jest.fn(),
+  onValue: jest.fn(),
+  off: jest.fn(),
+  remove: jest.fn(),
+}));
+
 import { isValidMove, executeMove, checkWinCondition, TUBE_CAPACITY } from '../src/domain/rules';
 import { solve, getNextHint } from '../src/domain/solver';
 import { generateLevel } from '../src/domain/generator';

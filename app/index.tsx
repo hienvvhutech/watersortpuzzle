@@ -181,30 +181,34 @@ export default function HomeScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  // Simulate opponent joining the host room after 3.5 seconds
+  // Listen for real opponent joining the host room via RTDB status updates
   useEffect(() => {
     if (battleHubVisible && battleStep === 'roomWait') {
-      const timer = setTimeout(() => {
-        haptics.success();
-        audio.playSound('reward');
-        Alert.alert(
-          t('battle.opponentJoined'),
-          'Opponent Speedy_Sorter (Bot) joined the lobby!',
-          [
-            {
-              text: 'START DUEL',
-              onPress: () => {
-                setBattleHubVisible(false);
-                setBattleStep('menu');
-                router.replace(`/battle?mode=room&roomCode=${battleRoomCode}`);
+      const battleService = services.get<IBattleService>('Battle');
+      battleService.onStatusChange((status) => {
+        if (status === 'active') {
+          haptics.success();
+          audio.playSound('reward');
+          Alert.alert(
+            t('battle.opponentJoined'),
+            language === 'vi' 
+              ? 'Đối thủ đã tham gia phòng đấu! Nhấn nút để bắt đầu.'
+              : 'Opponent joined the lobby! Tap to start.',
+            [
+              {
+                text: language === 'vi' ? 'BẮT ĐẦU ĐẤU' : 'START DUEL',
+                onPress: () => {
+                  setBattleHubVisible(false);
+                  setBattleStep('menu');
+                  router.replace(`/battle?mode=room&roomCode=${battleRoomCode}`);
+                },
               },
-            },
-          ]
-        );
-      }, 3500);
-      return () => clearTimeout(timer);
+            ]
+          );
+        }
+      });
     }
-  }, [battleHubVisible, battleStep]);
+  }, [battleHubVisible, battleStep, battleRoomCode]);
 
   const loadLeaderboardData = async () => {
     setLeaderboardLoading(true);
