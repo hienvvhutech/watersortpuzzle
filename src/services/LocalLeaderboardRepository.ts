@@ -39,8 +39,9 @@ export class LocalLeaderboardRepository implements ILeaderboardRepository {
 
   async getGlobalLeaderboard(
     sortBy: 'level' | 'score' | 'coins' | 'bestTime',
-    limit: number
-  ): Promise<LeaderboardEntry[]> {
+    limit: number,
+    lastVisibleDoc?: any
+  ): Promise<{ entries: LeaderboardEntry[]; lastDoc?: any }> {
     await this.ensureInitialized();
     const stored = await AsyncStorage.getItem(STORAGE_KEYS.PLAYERS);
     let players: LeaderboardEntry[] = stored ? JSON.parse(stored) : [];
@@ -63,7 +64,10 @@ export class LocalLeaderboardRepository implements ILeaderboardRepository {
 
     // Assign rank values
     const rankedPlayers = players.map((p, idx) => ({ ...p, rank: idx + 1 }));
-    return rankedPlayers.slice(0, limit);
+    return {
+      entries: rankedPlayers.slice(0, limit),
+      lastDoc: null,
+    };
   }
 
   async getFriendsLeaderboard(
@@ -113,14 +117,26 @@ export class LocalLeaderboardRepository implements ILeaderboardRepository {
     await AsyncStorage.setItem('wsp_player_self_score', JSON.stringify(entry));
   }
 
-  async createGroup(name: string, friends: string[]): Promise<LeaderboardGroup> {
+  async createGroup(
+    name: string,
+    description: string,
+    isPublic: boolean,
+    maxMembers: number
+  ): Promise<LeaderboardGroup> {
     const stored = await AsyncStorage.getItem(STORAGE_KEYS.GROUPS);
     const groups: LeaderboardGroup[] = stored ? JSON.parse(stored) : [];
 
     const newGroup: LeaderboardGroup = {
       id: `group_${Date.now()}`,
       name,
-      friends,
+      description,
+      isPublic,
+      maxMembers,
+      inviteCode: `WSP${Math.floor(100 + Math.random() * 900)}`,
+      ownerUid: 'player_self',
+      friends: ['Friend1', 'Friend2', 'Friend3'],
+      memberCount: 4,
+      createdAt: new Date().toISOString(),
     };
 
     groups.push(newGroup);
@@ -130,7 +146,7 @@ export class LocalLeaderboardRepository implements ILeaderboardRepository {
     const statsStored = await AsyncStorage.getItem(STORAGE_KEYS.FRIEND_STATS);
     const friendStats: Record<string, Omit<LeaderboardEntry, 'rank'>> = statsStored ? JSON.parse(statsStored) : {};
 
-    friends.forEach((friendName) => {
+    newGroup.friends.forEach((friendName) => {
       const randomSeed = Math.random();
       const avatarIndex = Math.floor(1 + Math.random() * 20);
       const countries = ['VN', 'US', 'SG', 'JP', 'KR', 'TH', 'PH', 'MY'];
@@ -149,6 +165,63 @@ export class LocalLeaderboardRepository implements ILeaderboardRepository {
 
     await AsyncStorage.setItem(STORAGE_KEYS.FRIEND_STATS, JSON.stringify(friendStats));
     return newGroup;
+  }
+
+  async joinGroup(inviteCode: string): Promise<LeaderboardGroup> {
+    const stored = await AsyncStorage.getItem(STORAGE_KEYS.GROUPS);
+    const groups: LeaderboardGroup[] = stored ? JSON.parse(stored) : [];
+
+    let group = groups.find(g => g.inviteCode === inviteCode);
+    if (!group) {
+      group = {
+        id: `group_${Date.now()}`,
+        name: `Joined Group ${inviteCode}`,
+        description: 'Joined via invite code',
+        isPublic: true,
+        maxMembers: 50,
+        inviteCode,
+        ownerUid: 'another_user',
+        friends: ['Friend A', 'Friend B'],
+        memberCount: 3,
+        createdAt: new Date().toISOString(),
+      };
+      groups.push(group);
+      await AsyncStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(groups));
+
+      // Add dummy friend stats
+      const statsStored = await AsyncStorage.getItem(STORAGE_KEYS.FRIEND_STATS);
+      const friendStats: Record<string, Omit<LeaderboardEntry, 'rank'>> = statsStored ? JSON.parse(statsStored) : {};
+
+      group.friends.forEach((friendName) => {
+        const randomSeed = Math.random();
+        const avatarIndex = Math.floor(1 + Math.random() * 20);
+        friendStats[`${group!.id}_${friendName}`] = {
+          userId: `friend_${group!.id}_${friendName}`,
+          username: friendName,
+          avatarId: `avatar_${avatarIndex}`,
+          country: 'VN',
+          level: Math.max(1, Math.floor(randomSeed * 20)),
+          score: Math.max(200, Math.floor(randomSeed * 6000)),
+          coins: Math.max(50, Math.floor(randomSeed * 3000)),
+          bestTime: Math.max(15, Math.floor(15 + randomSeed * 45)),
+        };
+      });
+      await AsyncStorage.setItem(STORAGE_KEYS.FRIEND_STATS, JSON.stringify(friendStats));
+    }
+    return group;
+  }
+
+  async leaveGroup(groupId: string): Promise<void> {
+    const stored = await AsyncStorage.getItem(STORAGE_KEYS.GROUPS);
+    if (stored) {
+      const groups: LeaderboardGroup[] = JSON.parse(stored);
+      const filtered = groups.filter(g => g.id !== groupId);
+      await AsyncStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(filtered));
+    }
+  }
+
+  async deleteGroup(groupId: string): Promise<void> {
+    await this.leaveGroup(groupId);
   }
 
   async getGroups(): Promise<LeaderboardGroup[]> {

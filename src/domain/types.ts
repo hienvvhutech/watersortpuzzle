@@ -217,12 +217,20 @@ export interface LeaderboardEntry {
   coins: number;
   bestTime: number; // in seconds
   rank?: number;
+  movement?: 'up' | 'down' | 'same';
 }
 
 export interface LeaderboardGroup {
   id: string;
   name: string;
   friends: string[];
+  description?: string;
+  isPublic?: boolean;
+  maxMembers?: number;
+  inviteCode?: string;
+  ownerUid?: string;
+  memberCount?: number;
+  createdAt?: string;
 }
 
 export interface BattleSession {

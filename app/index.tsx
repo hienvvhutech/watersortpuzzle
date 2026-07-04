@@ -75,13 +75,24 @@ export default function HomeScreen() {
   const [leaderboardTab, setLeaderboardTab] = useState<'global' | 'friends'>('global');
   const [leaderboardSortBy, setLeaderboardSortBy] = useState<'level' | 'score' | 'coins' | 'bestTime'>('score');
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardLastDoc, setLeaderboardLastDoc] = useState<any>(null);
+  const [leaderboardHasMore, setLeaderboardHasMore] = useState(false);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [leaderboardLoadingMore, setLeaderboardLoadingMore] = useState(false);
+  const [stickyPlayerEntry, setStickyPlayerEntry] = useState<LeaderboardEntry | null>(null);
   const [groups, setGroups] = useState<LeaderboardGroup[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
-  
+
   // Create Group states
   const [createGroupVisible, setCreateGroupVisible] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
-  const [newFriendNames, setNewFriendNames] = useState('');
+  const [newGroupDesc, setNewGroupDesc] = useState('');
+  const [newGroupPublic, setNewGroupPublic] = useState(true);
+  const [newGroupMax, setNewGroupMax] = useState('50');
+
+  // Join Group states
+  const [joinGroupVisible, setJoinGroupVisible] = useState(false);
+  const [joinGroupCode, setJoinGroupCode] = useState('');
 
   // Battle Hub states
   const [battleHubVisible, setBattleHubVisible] = useState(false);
@@ -146,20 +157,58 @@ export default function HomeScreen() {
   }, [battleHubVisible, battleStep]);
 
   const loadLeaderboardData = async () => {
+    setLeaderboardLoading(true);
+    setLeaderboardLastDoc(null);
+    setLeaderboardHasMore(false);
+    setStickyPlayerEntry(null);
     try {
       if (leaderboardTab === 'global') {
-        const data = await LeaderboardService.getGlobal(leaderboardSortBy, 15);
-        setLeaderboardData(data);
+        const res = await LeaderboardService.getGlobal(leaderboardSortBy, 20);
+        setLeaderboardData(res.entries);
+        setLeaderboardLastDoc(res.lastDoc || null);
+        setLeaderboardHasMore(!!(res.lastDoc));
+        // Set sticky player entry if current user is not visible on this page
+        const myUid = res.entries.find(e => e.userId === 'player_self');
+        if (!myUid && displayName) {
+          setStickyPlayerEntry({
+            userId: 'player_self',
+            username: displayName,
+            avatarId: avatarId,
+            country: '',
+            level: campaignProgressLevel,
+            score: totalScore,
+            coins: 0,
+            bestTime: 999,
+          });
+        }
       } else {
         if (selectedGroupId) {
-          const data = await LeaderboardService.getFriends(selectedGroupId, leaderboardSortBy, 10);
+          const data = await LeaderboardService.getFriends(selectedGroupId, leaderboardSortBy, 50);
           setLeaderboardData(data);
+          setLeaderboardHasMore(false);
         } else {
           setLeaderboardData([]);
         }
       }
     } catch (e) {
       console.warn('Failed to load leaderboard data', e);
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  };
+
+  const loadMoreLeaderboard = async () => {
+    if (!leaderboardLastDoc || leaderboardLoadingMore) return;
+    setLeaderboardLoadingMore(true);
+    try {
+      const res = await LeaderboardService.getGlobal(leaderboardSortBy, 20, leaderboardLastDoc);
+      setLeaderboardData(prev => [...prev, ...res.entries]);
+      setLeaderboardLastDoc(res.lastDoc || null);
+      setLeaderboardHasMore(!!(res.lastDoc));
+    } catch (e) {
+      console.warn('Failed to load more leaderboard', e);
+    } finally {
+      setLeaderboardLoadingMore(false);
     }
   };
 
@@ -175,32 +224,92 @@ export default function HomeScreen() {
     }
   };
 
+  const handleJoinGroupSubmit = async () => {
+    if (!joinGroupCode.trim()) return;
+    try {
+      const joined = await LeaderboardService.joinGroup(joinGroupCode.trim());
+      setJoinGroupCode('');
+      setJoinGroupVisible(false);
+      const list = await LeaderboardService.getGroups();
+      setGroups(list);
+      setSelectedGroupId(joined.id);
+      setLeaderboardTab('friends');
+    } catch (e: any) {
+      Alert.alert('Lỗi / Error', e?.message || 'Không tìm thấy nhóm. Kiểm tra lại mã mời.');
+    }
+  };
+
+  const handleLeaveGroup = (groupId: string, groupName: string) => {
+    Alert.alert(
+      'Rời nhóm',
+      `Bạn có muốn rời khỏi nhóm "${groupName}" không?`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Rời nhóm', style: 'destructive',
+          onPress: async () => {
+            try {
+              await LeaderboardService.leaveGroup(groupId);
+              if (selectedGroupId === groupId) setSelectedGroupId('');
+              await loadGroups();
+            } catch (e) {
+              console.warn('Failed to leave group', e);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteGroup = (groupId: string, groupName: string) => {
+    Alert.alert(
+      'Xóa nhóm',
+      `Xóa nhóm "${groupName}" sẽ xóa toàn bộ dữ liệu nhóm. Tiếp tục?`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa', style: 'destructive',
+          onPress: async () => {
+            try {
+              await LeaderboardService.deleteGroup(groupId);
+              if (selectedGroupId === groupId) setSelectedGroupId('');
+              await loadGroups();
+            } catch (e) {
+              Alert.alert('Lỗi', 'Chỉ chủ nhóm mới có thể xóa nhóm.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleCreateGroupSubmit = async () => {
     if (!newGroupName.trim()) {
-      Alert.alert(t('settings.resetClearedTitle'), 'Please enter a group name');
+      Alert.alert('Lỗi', 'Vui lòng nhập tên nhóm.');
       return;
     }
-    const friends = newFriendNames
-      .split(',')
-      .map((name) => name.trim())
-      .filter(Boolean);
-
-    if (friends.length === 0) {
-      Alert.alert(t('settings.resetClearedTitle'), 'Please enter at least one friend name');
-      return;
-    }
-
     try {
-      const newGroup = await LeaderboardService.createGroup(newGroupName, friends);
+      const newGroup = await LeaderboardService.createGroup(
+        newGroupName.trim(),
+        newGroupDesc.trim(),
+        newGroupPublic,
+        parseInt(newGroupMax) || 50
+      );
       setNewGroupName('');
-      setNewFriendNames('');
+      setNewGroupDesc('');
+      setNewGroupMax('50');
       setCreateGroupVisible(false);
-
       // Refresh groups list and select new group
       const list = await LeaderboardService.getGroups();
       setGroups(list);
       setSelectedGroupId(newGroup.id);
       setLeaderboardTab('friends');
+      if (newGroup.inviteCode) {
+        Alert.alert(
+          '🎉 Nhóm đã tạo!',
+          `Mã mời của bạn: ${newGroup.inviteCode}\n\nHãy chia sẻ mã này với bạn bè để họ tham gia nhóm.`
+        );
+      }
     } catch (e) {
       console.warn('Failed to create group', e);
     }
@@ -884,6 +993,20 @@ export default function HomeScreen() {
                       key={g.id}
                       style={[styles.groupBadge, selectedGroupId === g.id && styles.groupBadgeActive]}
                       onPress={() => setSelectedGroupId(g.id)}
+                      onLongPress={() => {
+                        Alert.alert(
+                          g.name,
+                          g.inviteCode ? `Mã mời: ${g.inviteCode}` : '',
+                          [
+                            { text: 'Đóng', style: 'cancel' },
+                            {
+                              text: 'Rời nhóm',
+                              onPress: () => handleLeaveGroup(g.id, g.name),
+                            },
+                            ...(g.ownerUid === 'player_self' ? [{ text: 'Xóa nhóm', style: 'destructive' as const, onPress: () => handleDeleteGroup(g.id, g.name) }] : []),
+                          ]
+                        );
+                      }}
                     >
                       <Text style={[styles.groupBadgeText, selectedGroupId === g.id && styles.groupBadgeTextActive]}>
                         {g.name}
@@ -899,6 +1022,16 @@ export default function HomeScreen() {
                     }}
                   >
                     <Ionicons name="add" size={14} color="#e2e8f0" />
+                  </Pressable>
+                  <Pressable
+                    style={[styles.groupAddButton, { marginLeft: 4 }]}
+                    onPress={() => {
+                      audio.playSound('click');
+                      haptics.selection();
+                      setJoinGroupVisible(true);
+                    }}
+                  >
+                    <Ionicons name="enter-outline" size={14} color="#e2e8f0" />
                   </Pressable>
                 </ScrollView>
               </View>
@@ -941,15 +1074,23 @@ export default function HomeScreen() {
                     </View>
                     <View style={styles.rankColProfile}>
                       <Text style={styles.rankAvatarEmoji}>{getAvatarEmoji(item.avatarId)}</Text>
-                      <Text
-                        style={[
-                          styles.rankColName,
-                          item.userId === 'player_self' && styles.rankColNameSelf,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {item.userId === 'player_self' ? `${item.username} (You)` : item.username}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
+                        <Text
+                          style={[
+                            styles.rankColName,
+                            item.userId === 'player_self' && styles.rankColNameSelf,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {item.userId === 'player_self' ? `${item.username} (You)` : item.username}
+                        </Text>
+                        {item.movement === 'up' && (
+                          <Text style={{ color: '#22c55e', fontSize: 10, marginLeft: 3, fontWeight: 'bold' }}>▲</Text>
+                        )}
+                        {item.movement === 'down' && (
+                          <Text style={{ color: '#ef4444', fontSize: 10, marginLeft: 3, fontWeight: 'bold' }}>▼</Text>
+                        )}
+                      </View>
                       {item.country ? (
                         <Text style={styles.rankColCountry}>({item.country})</Text>
                       ) : null}
@@ -965,7 +1106,38 @@ export default function HomeScreen() {
                   </View>
                 ))
               )}
+
+              {/* Load More Button */}
+              {leaderboardTab === 'global' && leaderboardHasMore && (
+                <Pressable
+                  style={({ pressed }) => [styles.loadMoreButton, pressed && styles.pressedScaleSmall]}
+                  onPress={loadMoreLeaderboard}
+                  disabled={leaderboardLoadingMore}
+                >
+                  <Text style={styles.loadMoreButtonText}>
+                    {leaderboardLoadingMore ? 'Đang tải...' : '⬇ Xem thêm'}
+                  </Text>
+                </Pressable>
+              )}
             </ScrollView>
+
+            {/* Sticky Player Row (if player is not in the current page) */}
+            {stickyPlayerEntry && leaderboardTab === 'global' && (
+              <View style={[styles.rankRow, styles.rankRowSelf, { marginTop: 4, borderRadius: 10 }]}>
+                <View style={styles.rankColRank}>
+                  <Text style={styles.rankBadgeText}>–</Text>
+                </View>
+                <View style={styles.rankColProfile}>
+                  <Text style={styles.rankAvatarEmoji}>{getAvatarEmoji(stickyPlayerEntry.avatarId)}</Text>
+                  <Text style={[styles.rankColName, styles.rankColNameSelf]} numberOfLines={1}>
+                    {stickyPlayerEntry.username} (You)
+                  </Text>
+                </View>
+                <Text style={[styles.rankColValue, styles.rankColValueSelf]}>
+                  {renderValueText(stickyPlayerEntry)}
+                </Text>
+              </View>
+            )}
 
             <Pressable
               style={({ pressed }) => [
@@ -989,23 +1161,32 @@ export default function HomeScreen() {
       <Modal visible={createGroupVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.dialogContent}>
-            <Text style={styles.dialogTitle}>{t('leaderboard.createGroup')}</Text>
+            <Text style={styles.dialogTitle}>🏆 {t('leaderboard.createGroup')}</Text>
 
             <TextInput
               style={styles.dialogInput}
-              placeholder={t('leaderboard.groupNamePlaceholder')}
+              placeholder="Tên nhóm (vd: Hội bạn thân)"
               placeholderTextColor="#64748b"
               value={newGroupName}
               onChangeText={setNewGroupName}
             />
 
             <TextInput
-              style={[styles.dialogInput, { height: 80, textAlignVertical: 'top', paddingTop: 10 }]}
-              placeholder={t('leaderboard.friendsPlaceholder')}
+              style={[styles.dialogInput, { height: 60, textAlignVertical: 'top', paddingTop: 10 }]}
+              placeholder="Mô tả nhóm (tuỳ chọn)"
               placeholderTextColor="#64748b"
               multiline
-              value={newFriendNames}
-              onChangeText={setNewFriendNames}
+              value={newGroupDesc}
+              onChangeText={setNewGroupDesc}
+            />
+
+            <TextInput
+              style={styles.dialogInput}
+              placeholder="Số thành viên tối đa (mặc định: 50)"
+              placeholderTextColor="#64748b"
+              keyboardType="numeric"
+              value={newGroupMax}
+              onChangeText={setNewGroupMax}
             />
 
             <View style={styles.dialogActions}>
@@ -1021,6 +1202,43 @@ export default function HomeScreen() {
                 onPress={handleCreateGroupSubmit}
               >
                 <Text style={styles.dialogCreateBtnText}>{t('leaderboard.create')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* DIALOG: JOIN GROUP VIA INVITE CODE */}
+      <Modal visible={joinGroupVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.dialogContent}>
+            <Text style={styles.dialogTitle}>🔑 Tham gia nhóm</Text>
+            <Text style={{ color: '#94a3b8', fontSize: 13, marginBottom: 12, textAlign: 'center' }}>
+              Nhập mã mời từ bạn bè để tham gia nhóm xếp hạng.
+            </Text>
+
+            <TextInput
+              style={[styles.dialogInput, { letterSpacing: 3, textAlign: 'center', fontSize: 18, fontWeight: 'bold', textTransform: 'uppercase' }]}
+              placeholder="VD: WSP84A"
+              placeholderTextColor="#475569"
+              value={joinGroupCode}
+              onChangeText={(v) => setJoinGroupCode(v.toUpperCase())}
+              maxLength={8}
+              autoCapitalize="characters"
+            />
+
+            <View style={styles.dialogActions}>
+              <Pressable
+                style={styles.dialogCancelBtn}
+                onPress={() => { setJoinGroupVisible(false); setJoinGroupCode(''); }}
+              >
+                <Text style={styles.dialogCancelBtnText}>Hủy</Text>
+              </Pressable>
+              <Pressable
+                style={styles.dialogCreateBtn}
+                onPress={handleJoinGroupSubmit}
+              >
+                <Text style={styles.dialogCreateBtnText}>Tham gia</Text>
               </Pressable>
             </View>
           </View>
@@ -1751,6 +1969,22 @@ const styles = StyleSheet.create({
   },
   rankListContent: {
     paddingVertical: 4,
+  },
+  loadMoreButton: {
+    backgroundColor: 'rgba(99, 102, 241, 0.18)',
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 32,
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.35)',
+  },
+  loadMoreButtonText: {
+    color: '#a5b4fc',
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 13,
   },
   rankRow: {
     flexDirection: 'row',
