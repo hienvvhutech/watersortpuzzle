@@ -1000,143 +1000,148 @@ export default function HomeScreen() {
           <View style={styles.glassModalContent}>
             <Text style={styles.modalTitle}>{t('settings.title')}</Text>
             
-            <View style={styles.settingsBox}>
-              <View style={styles.settingRow}>
-                <Text style={styles.settingLabel}>{t('settings.sound')}</Text>
-                <Switch
-                  value={soundEnabled}
-                  onValueChange={setSoundEnabled}
-                  trackColor={{ false: '#334155', true: '#10b981' }}
-                  thumbColor="#FFFFFF"
-                />
+            <ScrollView style={{ width: '100%', maxHeight: '82%' }} showsVerticalScrollIndicator={false}>
+              <View style={styles.settingsBox}>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>{t('settings.sound')}</Text>
+                  <Switch
+                    value={soundEnabled}
+                    onValueChange={setSoundEnabled}
+                    trackColor={{ false: '#334155', true: '#10b981' }}
+                    thumbColor="#FFFFFF"
+                  />
+                </View>
+
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>{t('settings.music')}</Text>
+                  <Switch
+                    value={musicEnabled}
+                    onValueChange={setMusicEnabled}
+                    trackColor={{ false: '#334155', true: '#10b981' }}
+                    thumbColor="#FFFFFF"
+                  />
+                </View>
+
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>{t('settings.vibration')}</Text>
+                  <Switch
+                    value={vibrationEnabled}
+                    onValueChange={setVibrationEnabled}
+                    trackColor={{ false: '#334155', true: '#10b981' }}
+                    thumbColor="#FFFFFF"
+                  />
+                </View>
+
+                {/* Language Selector Row */}
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>{t('settings.language')}</Text>
+                  <View style={styles.languageToggleGroup}>
+                    <Pressable
+                      style={[styles.languageOption, language === 'en' && styles.languageOptionActive]}
+                      onPress={() => {
+                        audio.playSound('click');
+                        haptics.selection();
+                        setLanguage('en');
+                      }}
+                    >
+                      <Text style={[styles.languageOptionText, language === 'en' && styles.languageOptionTextActive]}>EN</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.languageOption, language === 'vi' && styles.languageOptionActive]}
+                      onPress={() => {
+                        audio.playSound('click');
+                        haptics.selection();
+                        setLanguage('vi');
+                      }}
+                    >
+                      <Text style={[styles.languageOptionText, language === 'vi' && styles.languageOptionTextActive]}>VI</Text>
+                    </Pressable>
+                  </View>
+                </View>
               </View>
 
-              <View style={styles.settingRow}>
-                <Text style={styles.settingLabel}>{t('settings.music')}</Text>
-                <Switch
-                  value={musicEnabled}
-                  onValueChange={setMusicEnabled}
-                  trackColor={{ false: '#334155', true: '#10b981' }}
-                  thumbColor="#FFFFFF"
-                />
+              {/* Cloud Sync Backup Options */}
+              <View style={[styles.settingsBox, { marginTop: 10, paddingVertical: 12 }]}>
+                <Text style={styles.settingSectionHeader}>☁️ Sao lưu đám mây / Cloud Save</Text>
+                
+                <View style={{ paddingVertical: 4 }}>
+                  <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 8, lineHeight: 15 }}>
+                    {auth?.currentUser && !auth.currentUser.isAnonymous
+                      ? `Trạng thái / Status: Protected\nLiên kết / Linked: ${auth.currentUser.providerData[0]?.providerId === 'google.com' ? 'Google' : 'Apple'}\nĐồng bộ cuối / Last Sync: ${useProfileStore.getState().lastCloudSyncAt > 0 ? new Date(useProfileStore.getState().lastCloudSyncAt).toLocaleTimeString() : 'N/A'}`
+                      : 'Trạng thái / Status: Not enabled. Your progress is currently stored on this device.'}
+                  </Text>
+
+                  {(!auth?.currentUser || auth.currentUser.isAnonymous) ? (
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                      <Pressable
+                        style={({ pressed }) => [styles.syncActionBtn, pressed && styles.pressedScaleSmall]}
+                        onPress={() => handleLinkCloudSave('google')}
+                        disabled={syncLoading}
+                      >
+                        <Text style={styles.syncActionBtnText}>🔗 Enable Google</Text>
+                      </Pressable>
+                      <Pressable
+                        style={({ pressed }) => [styles.syncActionBtn, { backgroundColor: 'rgba(15, 23, 42, 0.4)' }, pressed && styles.pressedScaleSmall]}
+                        onPress={() => handleLinkCloudSave('apple')}
+                        disabled={syncLoading}
+                      >
+                        <Text style={styles.syncActionBtnText}>🔗 Enable Apple</Text>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Text style={{ color: '#10b981', fontSize: 11, fontWeight: '800', marginTop: 4 }}>✓ Account Secured</Text>
+                  )}
+                  {syncLoading && <ActivityIndicator size="small" color="#a78bfa" style={{ marginTop: 8, alignSelf: 'flex-start' }} />}
+                </View>
               </View>
 
-              <View style={styles.settingRow}>
-                <Text style={styles.settingLabel}>{t('settings.vibration')}</Text>
-                <Switch
-                  value={vibrationEnabled}
-                  onValueChange={setVibrationEnabled}
-                  trackColor={{ false: '#334155', true: '#10b981' }}
-                  thumbColor="#FFFFFF"
-                />
-              </View>
-
-              {/* Language Selector Row */}
-              <View style={styles.settingRow}>
-                <Text style={styles.settingLabel}>{t('settings.language')}</Text>
-                <View style={styles.languageToggleGroup}>
+              {/* Manual Local Backup Options */}
+              <View style={[styles.settingsBox, { marginTop: 10, paddingVertical: 12 }]}>
+                <Text style={styles.settingSectionHeader}>💾 Sao lưu thủ công / Local Backup</Text>
+                <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 4, marginTop: 4 }}>
                   <Pressable
-                    style={[styles.languageOption, language === 'en' && styles.languageOptionActive]}
-                    onPress={() => {
-                      audio.playSound('click');
-                      haptics.selection();
-                      setLanguage('en');
-                    }}
+                    style={({ pressed }) => [styles.syncActionBtn, { backgroundColor: 'rgba(99, 102, 241, 0.15)', borderColor: 'rgba(99, 102, 241, 0.3)' }, pressed && styles.pressedScaleSmall]}
+                    onPress={handleExportBackup}
                   >
-                    <Text style={[styles.languageOptionText, language === 'en' && styles.languageOptionTextActive]}>EN</Text>
+                    <Text style={[styles.syncActionBtnText, { color: '#a5b4fc' }]}>💾 Export Save</Text>
                   </Pressable>
                   <Pressable
-                    style={[styles.languageOption, language === 'vi' && styles.languageOptionActive]}
-                    onPress={() => {
-                      audio.playSound('click');
-                      haptics.selection();
-                      setLanguage('vi');
-                    }}
+                    style={({ pressed }) => [styles.syncActionBtn, { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.3)' }, pressed && styles.pressedScaleSmall]}
+                    onPress={() => setImportModalVisible(true)}
                   >
-                    <Text style={[styles.languageOptionText, language === 'vi' && styles.languageOptionTextActive]}>VI</Text>
+                    <Text style={[styles.syncActionBtnText, { color: '#34d399' }]}>📥 Import Save</Text>
                   </Pressable>
                 </View>
               </View>
-            </View>
 
-            {/* Cloud Sync Backup Options */}
-            <View style={[styles.settingsBox, { marginTop: 10, paddingVertical: 12 }]}>
-              <Text style={styles.settingSectionHeader}>☁️ Sao lưu đám mây / Cloud Save</Text>
-              
-              <View style={{ paddingVertical: 4 }}>
-                <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 8, lineHeight: 15 }}>
-                  {auth?.currentUser && !auth.currentUser.isAnonymous
-                    ? `Trạng thái / Status: Protected\nLiên kết / Linked: ${auth.currentUser.providerData[0]?.providerId === 'google.com' ? 'Google' : 'Apple'}\nĐồng bộ cuối / Last Sync: ${useProfileStore.getState().lastCloudSyncAt > 0 ? new Date(useProfileStore.getState().lastCloudSyncAt).toLocaleTimeString() : 'N/A'}`
-                    : 'Trạng thái / Status: Not enabled. Your progress is currently stored on this device.'}
-                </Text>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.editProfileMenuBtn,
+                  pressed && styles.pressedScaleSmall,
+                  { marginBottom: 8 }
+                ]}
+                onPress={handleEditProfileOpen}
+              >
+                <Text style={styles.editProfileMenuBtnText}>{t('settings.editProfile' as any)}</Text>
+              </Pressable>
 
-                {(!auth?.currentUser || auth.currentUser.isAnonymous) ? (
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-                    <Pressable
-                      style={({ pressed }) => [styles.syncActionBtn, pressed && styles.pressedScaleSmall]}
-                      onPress={() => handleLinkCloudSave('google')}
-                      disabled={syncLoading}
-                    >
-                      <Text style={styles.syncActionBtnText}>🔗 Enable Google</Text>
-                    </Pressable>
-                    <Pressable
-                      style={({ pressed }) => [styles.syncActionBtn, { backgroundColor: 'rgba(15, 23, 42, 0.4)' }, pressed && styles.pressedScaleSmall]}
-                      onPress={() => handleLinkCloudSave('apple')}
-                      disabled={syncLoading}
-                    >
-                      <Text style={styles.syncActionBtnText}>🔗 Enable Apple</Text>
-                    </Pressable>
-                  </View>
-                ) : (
-                  <Text style={{ color: '#10b981', fontSize: 11, fontWeight: '800', marginTop: 4 }}>✓ Account Secured</Text>
-                )}
-                {syncLoading && <ActivityIndicator size="small" color="#a78bfa" style={{ marginTop: 8, alignSelf: 'flex-start' }} />}
-              </View>
-            </View>
-
-            {/* Manual Local Backup Options */}
-            <View style={[styles.settingsBox, { marginTop: 10, paddingVertical: 12 }]}>
-              <Text style={styles.settingSectionHeader}>💾 Sao lưu thủ công / Local Backup</Text>
-              <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 4, marginTop: 4 }}>
-                <Pressable
-                  style={({ pressed }) => [styles.syncActionBtn, { backgroundColor: 'rgba(99, 102, 241, 0.15)', borderColor: 'rgba(99, 102, 241, 0.3)' }, pressed && styles.pressedScaleSmall]}
-                  onPress={handleExportBackup}
-                >
-                  <Text style={[styles.syncActionBtnText, { color: '#a5b4fc' }]}>💾 Export Save</Text>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [styles.syncActionBtn, { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.3)' }, pressed && styles.pressedScaleSmall]}
-                  onPress={() => setImportModalVisible(true)}
-                >
-                  <Text style={[styles.syncActionBtnText, { color: '#34d399' }]}>📥 Import Save</Text>
-                </Pressable>
-              </View>
-            </View>
-
-            <Pressable
-              style={({ pressed }) => [
-                styles.editProfileMenuBtn,
-                pressed && styles.pressedScaleSmall,
-              ]}
-              onPress={handleEditProfileOpen}
-            >
-              <Text style={styles.editProfileMenuBtnText}>{t('settings.editProfile' as any)}</Text>
-            </Pressable>
-
-            <Pressable
-              style={({ pressed }) => [
-                styles.resetButton,
-                pressed && styles.pressedScaleSmall,
-              ]}
-              onPress={confirmReset}
-            >
-              <Text style={styles.resetButtonText}>{t('settings.reset')}</Text>
-            </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.resetButton,
+                  pressed && styles.pressedScaleSmall,
+                  { marginBottom: 12 }
+                ]}
+                onPress={confirmReset}
+              >
+                <Text style={styles.resetButtonText}>{t('settings.reset')}</Text>
+              </Pressable>
+            </ScrollView>
 
             <Pressable
               style={({ pressed }) => [
                 styles.closeButton,
                 pressed && styles.pressedScaleSmall,
+                { marginTop: 10 }
               ]}
               onPress={() => {
                 audio.playSound('click');
