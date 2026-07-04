@@ -38,7 +38,9 @@ export const LeaderboardService = {
     level: number,
     score: number,
     coins: number,
-    bestTime: number
+    bestTime: number,
+    avatarId?: string,
+    country?: string
   ): Promise<void> => {
     const repo = services.get<ILeaderboardRepository>('Leaderboard');
     await repo.saveScore({
@@ -48,6 +50,8 @@ export const LeaderboardService = {
       score,
       coins,
       bestTime,
+      avatarId: avatarId || 'avatar_1',
+      country: country || '',
     });
   },
 

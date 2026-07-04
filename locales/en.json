@@ -21,6 +21,7 @@
     "music": "Background Music",
     "vibration": "Haptics & Vibration",
     "language": "Language",
+    "editProfile": "Edit Profile",
     "reset": "RESET DATA",
     "close": "CLOSE",
     "resetAlertTitle": "Reset Progress",
@@ -129,5 +130,21 @@
     "create": "Create",
     "cancel": "Cancel",
     "close": "CLOSE"
+  },
+  "validation": {
+    "nameRequired": "Display Name is required.",
+    "nameLength": "Display Name must be between 3 and 20 characters.",
+    "nameInvalidChars": "Invalid characters. Use letters, numbers, spaces, or _ . -"
+  },
+  "profile": {
+    "createTitle": "CREATE PROFILE",
+    "editTitle": "EDIT PROFILE",
+    "nameLabel": "Display Name",
+    "avatarLabel": "Choose Avatar",
+    "countryLabel": "Country (Optional)",
+    "playerIdLabel": "Player ID (Read Only)",
+    "save": "SAVE PROFILE",
+    "enterName": "Enter display name",
+    "enterCountry": "Enter country (e.g. VN, US)"
   }
 }

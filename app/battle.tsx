@@ -20,6 +20,7 @@ import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { GameBackground } from '../src/presentation/components/GameBackground';
 import { useTranslation } from '../src/shared/i18n';
 import { services, IBattleService } from '../src/shared/IServiceRegistry';
+import { getAvatarEmoji } from '../src/shared/avatars';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -51,6 +52,7 @@ export default function BattleScreen() {
   } = useGameStore();
 
   const addProfileCoins = useProfileStore((state) => state.addCoins);
+  const { displayName, avatarId } = useProfileStore();
 
   // Battle session states
   const [opponentProgress, setOpponentProgress] = useState(0);
@@ -185,8 +187,8 @@ export default function BattleScreen() {
           {/* Player Progress (Left) */}
           <View style={styles.playerProgressCard}>
             <View style={styles.playerMeta}>
-              <Ionicons name="person" size={16} color="#10b981" style={{ marginRight: 6 }} />
-              <Text style={styles.playerUsername}>{t('leaderboard.player')}</Text>
+              <Text style={{ fontSize: 16, marginRight: 6 }}>{getAvatarEmoji(avatarId)}</Text>
+              <Text style={styles.playerUsername} numberOfLines={1}>{displayName || 'Player'}</Text>
             </View>
             <Text style={styles.playerProgressPercent}>{playerProgress}%</Text>
             <View style={styles.progressBarBg}>
@@ -202,8 +204,8 @@ export default function BattleScreen() {
           {/* Opponent Progress (Right) */}
           <View style={styles.playerProgressCard}>
             <View style={[styles.playerMeta, { justifyContent: 'flex-end' }]}>
-              <Text style={styles.playerUsername}>{opponentName}</Text>
-              <Ionicons name="laptop" size={16} color="#ef4444" style={{ marginLeft: 6 }} />
+              <Text style={styles.playerUsername} numberOfLines={1}>{opponentName}</Text>
+              <Text style={{ fontSize: 16, marginLeft: 6 }}>{mode === 'bot' ? '🤖' : '🦊'}</Text>
             </View>
             <Text style={[styles.playerProgressPercent, { textAlign: 'right' }]}>{opponentProgress}%</Text>
             <View style={styles.progressBarBg}>

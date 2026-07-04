@@ -7,6 +7,7 @@ import { XPService } from '../../services/XPService';
 import { RewardService } from '../../services/RewardService';
 import { DifficultyService } from '../../services/DifficultyService';
 import { LeaderboardService } from '../../services/LeaderboardService';
+import { services, IProfileRepository } from '../../shared/IServiceRegistry';
 
 // Default initial state
 const defaultState = {
@@ -31,6 +32,15 @@ const defaultState = {
   achievements: {} as Record<string, Achievement>,
   dailyMissions: [] as DailyMission[],
   unlockedBadges: [] as string[],
+
+  // Player Identity Phase 5 defaults
+  playerId: null as string | null,
+  displayName: '',
+  avatarId: 'avatar_1',
+  country: '',
+  createdAt: 0,
+  updatedAt: 0,
+  isProfileCreated: false,
 
   // Play Session Telemetry
   sessionLevelsPlayed: 0,
@@ -128,6 +138,9 @@ export interface ProfileStore extends ProfileState {
   resetSessionTelemetry: () => void;
   unlockBadge: (badgeId: string) => void;
   resetProfile: () => void;
+
+  // Profile Identity Phase 5
+  updateProfile: (displayName: string, avatarId: string, country?: string) => void;
 }
 
 export const useProfileStore = create<ProfileStore>()(
@@ -342,11 +355,13 @@ export const useProfileStore = create<ProfileStore>()(
         const bestTime = fastestTimes.length > 0 ? Math.min(...fastestTimes) : 999;
 
         LeaderboardService.savePlayerScore(
-          'Player',
+          currentProfile.displayName || 'Player',
           highestCompleted,
           totalScore,
           currentProfile.coins,
-          bestTime
+          bestTime,
+          currentProfile.avatarId,
+          currentProfile.country
         ).catch(e => console.warn('[ProfileStore] Failed to save score to leaderboard', e));
 
         // 7. Update achievements dynamically
@@ -438,13 +453,69 @@ export const useProfileStore = create<ProfileStore>()(
       resetProfile: () => {
         set(defaultState);
       },
+
+      updateProfile: (displayName, avatarId, country) => {
+        set((state) => {
+          const now = Date.now();
+          const pId = state.playerId || 'usr_' + Math.random().toString(36).substring(2, 11);
+          
+          const updatedProfile = {
+            playerId: pId,
+            displayName,
+            avatarId,
+            country: country || '',
+            createdAt: state.createdAt || now,
+            updatedAt: now,
+            isProfileCreated: true,
+          };
+
+          // Save to repository
+          const repo = services.get<IProfileRepository>('Profile');
+          repo.saveProfile({
+            ...state,
+            ...updatedProfile,
+            currentLevel: state.playerLevel,
+            highestLevel: Object.keys(state.levelProgress).length > 0 ? Math.max(...Object.keys(state.levelProgress).map(Number)) : 1,
+            totalCoins: state.coins,
+            totalScore: Object.values(state.levelProgress).reduce((acc, curr) => acc + (curr.bestScore || 0), 0),
+            bestTime: Math.min(...Object.values(state.levelProgress).map(curr => curr.fastestTime).filter(t => t > 0)) || 999,
+          }).catch(e => console.warn('Failed to save profile repository', e));
+
+          // Sync to leaderboard
+          const completedLevelsList = Object.keys(state.levelProgress).map(Number);
+          const highestCompleted = completedLevelsList.length > 0 ? Math.max(...completedLevelsList) : 0;
+          const totalScore = Object.values(state.levelProgress).reduce((acc, curr) => acc + (curr.bestScore || 0), 0);
+          const fastestTimes = Object.values(state.levelProgress).map(curr => curr.fastestTime).filter(t => t > 0);
+          const bestTime = fastestTimes.length > 0 ? Math.min(...fastestTimes) : 999;
+
+          LeaderboardService.savePlayerScore(
+            displayName,
+            highestCompleted,
+            totalScore,
+            state.coins,
+            bestTime
+          ).catch(e => console.warn('Failed to sync score on profile edit', e));
+
+          return updatedProfile;
+        });
+      },
     }),
     {
       name: 'water-sort-profile-storage',
       storage: createJSONStorage(() => SaveService.createSecureStorage('profileStore')),
-      version: 1,
+      version: 2,
       migrate: (persistedState: any, version: number) => {
-        // Implement migrations here when updating production state schemas
+        if (version < 2) {
+          if (persistedState && typeof persistedState === 'object') {
+            persistedState.playerId = persistedState.playerId || 'usr_' + Math.random().toString(36).substring(2, 11);
+            persistedState.displayName = persistedState.displayName || '';
+            persistedState.avatarId = persistedState.avatarId || 'avatar_1';
+            persistedState.country = persistedState.country || '';
+            persistedState.createdAt = persistedState.createdAt || Date.now();
+            persistedState.updatedAt = persistedState.updatedAt || Date.now();
+            persistedState.isProfileCreated = persistedState.isProfileCreated || false;
+          }
+        }
         return persistedState as any;
       },
     }

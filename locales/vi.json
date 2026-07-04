@@ -21,6 +21,7 @@
     "music": "Nhạc nền",
     "vibration": "Rung & Phản hồi",
     "language": "Ngôn ngữ",
+    "editProfile": "Sửa hồ sơ",
     "reset": "XÓA TIẾN TRÌNH",
     "close": "ĐỒNG Ý",
     "resetAlertTitle": "Xóa tiến trình",
@@ -129,5 +130,21 @@
     "create": "Tạo",
     "cancel": "Hủy",
     "close": "ĐỒNG Ý"
+  },
+  "validation": {
+    "nameRequired": "Không được bỏ trống tên hiển thị.",
+    "nameLength": "Tên hiển thị phải từ 3 đến 20 ký tự.",
+    "nameInvalidChars": "Tên chứa ký tự lạ. Chỉ cho phép chữ, số, khoảng trắng và _ . -"
+  },
+  "profile": {
+    "createTitle": "TẠO HỒ SƠ",
+    "editTitle": "SỬA HỒ SƠ",
+    "nameLabel": "Tên Hiển Thị",
+    "avatarLabel": "Chọn Ảnh Đại Diện",
+    "countryLabel": "Quốc Gia (Không bắt buộc)",
+    "playerIdLabel": "Mã Người Chơi (Chỉ đọc)",
+    "save": "LƯU HỒ SƠ",
+    "enterName": "Nhập tên hiển thị của bạn",
+    "enterCountry": "Nhập mã quốc gia (ví dụ VN, US)"
   }
 }

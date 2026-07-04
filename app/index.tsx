@@ -23,8 +23,10 @@ import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { GameBackground } from '../src/presentation/components/GameBackground';
 import { useTranslation } from '../src/shared/i18n';
 import { LeaderboardService } from '../src/services/LeaderboardService';
+import { ProfileService } from '../src/services/ProfileService';
 import { services, IBattleService } from '../src/shared/IServiceRegistry';
 import { LeaderboardEntry, LeaderboardGroup } from '../src/domain/types';
+import { getAvatarEmoji, AVATARS } from '../src/shared/avatars';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -36,7 +38,17 @@ export default function HomeScreen() {
 
   // Zustand stores
   const { coins, stats, resetGame, startLevel } = useGameStore();
-  const { seasonPassStars, levelProgress } = useProfileStore();
+  const {
+    seasonPassStars,
+    levelProgress,
+    playerId,
+    displayName,
+    avatarId,
+    country,
+    isProfileCreated,
+    updateProfile,
+  } = useProfileStore();
+
   const {
     soundEnabled,
     musicEnabled,
@@ -50,6 +62,7 @@ export default function HomeScreen() {
   const completedLevels = Object.keys(levelProgress).map(Number);
   const highestCompletedLevel = completedLevels.length > 0 ? Math.max(...completedLevels) : 0;
   const campaignProgressLevel = highestCompletedLevel + 1;
+  const totalScore = Object.values(levelProgress).reduce((acc, curr) => acc + (curr.bestScore || 0), 0);
 
   // Modals state
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -75,6 +88,26 @@ export default function HomeScreen() {
   const [battleRoomCode, setBattleRoomCode] = useState('');
   const [enteredRoomCode, setEnteredRoomCode] = useState('');
   const [connecting, setConnecting] = useState(false);
+
+  // Profile Form states
+  const [profileModalVisible, setProfileModalVisible] = useState(false);
+  const [profileFormTitle, setProfileFormTitle] = useState<'create' | 'edit'>('create');
+  const [formName, setFormName] = useState('');
+  const [formAvatarId, setFormAvatarId] = useState('avatar_1');
+  const [formCountry, setFormCountry] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Enforce profile creation at launch
+  useEffect(() => {
+    if (!isProfileCreated) {
+      setProfileFormTitle('create');
+      setFormName('');
+      setFormAvatarId('avatar_1');
+      setFormCountry('');
+      setFormError(null);
+      setProfileModalVisible(true);
+    }
+  }, [isProfileCreated]);
 
   // Load Leaderboard data on change
   useEffect(() => {
@@ -205,6 +238,34 @@ export default function HomeScreen() {
     }
   };
 
+  const handleProfileFormSubmit = () => {
+    audio.playSound('click');
+    haptics.selection();
+
+    const validationErrorKey = ProfileService.validateDisplayName(formName);
+    if (validationErrorKey) {
+      setFormError(t(validationErrorKey as any));
+      haptics.error();
+      return;
+    }
+
+    setFormError(null);
+    updateProfile(formName.trim(), formAvatarId, formCountry.trim().toUpperCase());
+    setProfileModalVisible(false);
+  };
+
+  const handleEditProfileOpen = () => {
+    audio.playSound('click');
+    haptics.selection();
+    setProfileFormTitle('edit');
+    setFormName(displayName);
+    setFormAvatarId(avatarId || 'avatar_1');
+    setFormCountry(country || '');
+    setFormError(null);
+    setSettingsVisible(false);
+    setProfileModalVisible(true);
+  };
+
   const handlePlay = () => {
     audio.playSound('click');
     haptics.selection();
@@ -280,6 +341,29 @@ export default function HomeScreen() {
 
       {/* Main Content */}
       <View style={styles.content}>
+        
+        {/* Region 0: Player Profile Header Card */}
+        {isProfileCreated && (
+          <View style={styles.playerCardContainer}>
+            <View style={styles.playerCardAvatar}>
+              <Text style={styles.playerCardAvatarEmoji}>{getAvatarEmoji(avatarId)}</Text>
+            </View>
+            <View style={styles.playerCardInfo}>
+              <View style={styles.playerCardNameRow}>
+                <Text style={styles.playerCardName} numberOfLines={1}>{displayName}</Text>
+                {country ? <Text style={styles.playerCardCountry}>({country})</Text> : null}
+              </View>
+              <View style={styles.playerCardStats}>
+                <Text style={styles.playerCardStatText}>Lvl {campaignProgressLevel}</Text>
+                <View style={styles.playerCardStatDivider} />
+                <Text style={[styles.playerCardStatText, { color: '#fbbf24' }]}>🪙 {coins}</Text>
+                <View style={styles.playerCardStatDivider} />
+                <Text style={styles.playerCardStatText}>{totalScore} pts</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* Title Container with Ambient Neon Glow */}
         <View style={styles.titleContainer}>
           <Text style={styles.titleText}>{t('home.title')}</Text>
@@ -288,16 +372,6 @@ export default function HomeScreen() {
 
         {/* Level Info & Play Button */}
         <View style={styles.centerContainer}>
-          <View style={styles.badgeContainer}>
-            <View style={styles.infoBadge}>
-              <Text style={styles.infoBadgeText}>{t('home.level', { level: campaignProgressLevel })}</Text>
-            </View>
-            <View style={styles.coinBadge}>
-              <FontAwesome5 name="coins" size={14} color="#fbbf24" style={{ marginRight: 6 }} />
-              <Text style={styles.coinBadgeText}>{coins}</Text>
-            </View>
-          </View>
-
           <Pressable
             style={({ pressed }) => [
               styles.playButton,
@@ -517,6 +591,16 @@ export default function HomeScreen() {
                 </View>
               </View>
             </View>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.editProfileMenuBtn,
+                pressed && styles.pressedScaleSmall,
+              ]}
+              onPress={handleEditProfileOpen}
+            >
+              <Text style={styles.editProfileMenuBtnText}>{t('settings.editProfile' as any)}</Text>
+            </Pressable>
 
             <Pressable
               style={({ pressed }) => [
@@ -764,21 +848,30 @@ export default function HomeScreen() {
                     key={item.userId}
                     style={[
                       styles.rankRow,
+                      item.rank === 1 && styles.rankRowFirst,
+                      item.rank === 2 && styles.rankRowSecond,
+                      item.rank === 3 && styles.rankRowThird,
                       item.userId === 'player_self' && styles.rankRowSelf,
                     ]}
                   >
                     <View style={styles.rankColRank}>
                       {renderRankBadge(item.rank || 0)}
                     </View>
-                    <Text
-                      style={[
-                        styles.rankColName,
-                        item.userId === 'player_self' && styles.rankColNameSelf,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {item.userId === 'player_self' ? `${item.username} (You)` : item.username}
-                    </Text>
+                    <View style={styles.rankColProfile}>
+                      <Text style={styles.rankAvatarEmoji}>{getAvatarEmoji(item.avatarId)}</Text>
+                      <Text
+                        style={[
+                          styles.rankColName,
+                          item.userId === 'player_self' && styles.rankColNameSelf,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {item.userId === 'player_self' ? `${item.username} (You)` : item.username}
+                      </Text>
+                      {item.country ? (
+                        <Text style={styles.rankColCountry}>({item.country})</Text>
+                      ) : null}
+                    </View>
                     <Text
                       style={[
                         styles.rankColValue,
@@ -926,6 +1019,12 @@ export default function HomeScreen() {
                 <ActivityIndicator size="small" color="#fbbf24" style={{ marginVertical: 14 }} />
                 <Text style={styles.waitingText}>{t('battle.waitingOpponent')}</Text>
 
+                <View style={styles.lobbyHostCard}>
+                  <Text style={styles.lobbyHostLabel}>Host:</Text>
+                  <Text style={styles.lobbyHostAvatar}>{getAvatarEmoji(avatarId)}</Text>
+                  <Text style={styles.lobbyHostName}>{displayName}</Text>
+                </View>
+
                 <Pressable
                   style={[styles.battleHubBtn, { marginTop: 20 }]}
                   onPress={() => {
@@ -990,6 +1089,83 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* MODAL 6: CREATE / EDIT PROFILE OVERLAY */}
+      <Modal visible={profileModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.dialogContent}>
+            <Text style={styles.dialogTitle}>
+              {profileFormTitle === 'create' ? t('profile.createTitle' as any) : t('profile.editTitle' as any)}
+            </Text>
+
+            {profileFormTitle === 'edit' && playerId && (
+              <View style={styles.dialogPlayerIdRow}>
+                <Text style={styles.dialogPlayerIdLabel}>{t('profile.playerIdLabel' as any)}:</Text>
+                <Text style={styles.dialogPlayerIdText} numberOfLines={1}>{playerId}</Text>
+              </View>
+            )}
+
+            <Text style={styles.dialogFieldLabel}>{t('profile.nameLabel' as any)}*</Text>
+            <TextInput
+              style={styles.dialogInput}
+              placeholder={t('profile.enterName' as any)}
+              placeholderTextColor="#64748b"
+              maxLength={20}
+              value={formName}
+              onChangeText={setFormName}
+            />
+
+            <Text style={styles.dialogFieldLabel}>{t('profile.avatarLabel' as any)}</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.avatarPickerScroll}>
+              {Object.entries(AVATARS).map(([id, emoji]) => (
+                <Pressable
+                  key={id}
+                  style={[
+                    styles.avatarPickOption,
+                    formAvatarId === id && styles.avatarPickOptionSelected,
+                  ]}
+                  onPress={() => setFormAvatarId(id)}
+                >
+                  <Text style={styles.avatarPickEmoji}>{emoji}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            <Text style={styles.dialogFieldLabel}>{t('profile.countryLabel' as any)}</Text>
+            <TextInput
+              style={styles.dialogInput}
+              placeholder={t('profile.enterCountry' as any)}
+              placeholderTextColor="#64748b"
+              maxLength={10}
+              value={formCountry}
+              onChangeText={setFormCountry}
+            />
+
+            {formError && <Text style={styles.dialogErrorText}>{formError}</Text>}
+
+            <View style={styles.dialogActions}>
+              {profileFormTitle === 'edit' && (
+                <Pressable
+                  style={styles.dialogCancelBtn}
+                  onPress={() => setProfileModalVisible(false)}
+                >
+                  <Text style={styles.dialogCancelBtnText}>{t('leaderboard.cancel')}</Text>
+                </Pressable>
+              )}
+
+              <Pressable
+                style={[
+                  styles.dialogCreateBtn,
+                  profileFormTitle === 'create' && { marginLeft: 0 },
+                ]}
+                onPress={handleProfileFormSubmit}
+              >
+                <Text style={styles.dialogCreateBtnText}>{t('profile.save' as any)}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1007,7 +1183,7 @@ const styles = StyleSheet.create({
   },
   titleContainer: {
     alignItems: 'center',
-    marginTop: 45,
+    marginTop: 20,
   },
   titleText: {
     fontSize: 46,
@@ -1031,39 +1207,6 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 30,
   },
-  badgeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 35,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderRadius: 24,
-    padding: 6,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  infoBadge: {
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-    paddingVertical: 10,
-    paddingHorizontal: 22,
-    borderRadius: 18,
-    marginRight: 6,
-  },
-  infoBadgeText: {
-    color: '#818cf8',
-    fontSize: 14,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-  },
-  coinBadge: {
-    paddingVertical: 10,
-    paddingHorizontal: 22,
-  },
-  coinBadgeText: {
-    color: '#fbbf24',
-    fontSize: 15,
-    fontWeight: '900',
-  },
   playButton: {
     backgroundColor: '#10b981', // Emerald green
     paddingHorizontal: 60,
@@ -1074,7 +1217,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
-    width: '80%',
+    width: '85%',
     alignItems: 'center',
   },
   playButtonText: {
@@ -1153,7 +1296,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.04)',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   settingRow: {
     flexDirection: 'row',
@@ -1169,12 +1312,27 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#cbd5e1',
   },
+  editProfileMenuBtn: {
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(99, 102, 241, 0.3)',
+    width: '100%',
+    padding: 14,
+    borderRadius: 18,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  editProfileMenuBtnText: {
+    color: '#818cf8',
+    fontWeight: '800',
+    fontSize: 15,
+  },
   resetButton: {
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
     borderWidth: 1.5,
     borderColor: 'rgba(239, 68, 68, 0.3)',
     width: '100%',
-    padding: 15,
+    padding: 14,
     borderRadius: 18,
     alignItems: 'center',
     marginTop: 10,
@@ -1188,10 +1346,10 @@ const styles = StyleSheet.create({
   closeButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     width: '100%',
-    padding: 15,
+    padding: 14,
     borderRadius: 18,
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: 10,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.05)',
   },
@@ -1265,7 +1423,7 @@ const styles = StyleSheet.create({
   metaContainer: {
     width: '100%',
     paddingHorizontal: 20,
-    marginTop: 20,
+    marginTop: 10,
     marginBottom: 10,
     alignItems: 'center',
   },
@@ -1511,6 +1669,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     marginVertical: 2,
   },
+  rankRowFirst: {
+    backgroundColor: 'rgba(251, 191, 36, 0.04)',
+    borderColor: 'rgba(251, 191, 36, 0.15)',
+    borderWidth: 1,
+    borderRadius: 12,
+    marginVertical: 2,
+  },
+  rankRowSecond: {
+    backgroundColor: 'rgba(203, 213, 225, 0.03)',
+    borderColor: 'rgba(203, 213, 225, 0.1)',
+    borderWidth: 1,
+    borderRadius: 12,
+    marginVertical: 2,
+  },
+  rankRowThird: {
+    backgroundColor: 'rgba(180, 83, 9, 0.03)',
+    borderColor: 'rgba(180, 83, 9, 0.1)',
+    borderWidth: 1,
+    borderRadius: 12,
+    marginVertical: 2,
+  },
   rankColRank: {
     width: '15%',
     alignItems: 'center',
@@ -1521,16 +1700,30 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 12,
   },
-  rankColName: {
+  rankColProfile: {
     width: '55%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 4,
+  },
+  rankAvatarEmoji: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  rankColName: {
     color: '#cbd5e1',
     fontWeight: '600',
     fontSize: 13,
-    paddingLeft: 10,
   },
   rankColNameSelf: {
     color: '#34d399',
     fontWeight: '800',
+  },
+  rankColCountry: {
+    fontSize: 10,
+    color: '#64748b',
+    fontWeight: '700',
+    marginLeft: 4,
   },
   rankColValue: {
     width: '30%',
@@ -1570,19 +1763,28 @@ const styles = StyleSheet.create({
   },
   // Dialog (Create Group Overlay) Styles
   dialogContent: {
-    width: '84%',
+    width: '88%',
     backgroundColor: '#1e293b',
     borderRadius: 24,
     padding: 20,
-    alignItems: 'center',
+    alignItems: 'flex-start',
     borderWidth: 1.2,
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   dialogTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '900',
     color: '#ffffff',
     marginBottom: 16,
+    alignSelf: 'center',
+  },
+  dialogFieldLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    marginBottom: 6,
+    letterSpacing: 0.5,
   },
   dialogInput: {
     width: '100%',
@@ -1594,7 +1796,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     color: '#f8fafc',
     fontSize: 14,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   dialogActions: {
     flexDirection: 'row',
@@ -1604,7 +1806,7 @@ const styles = StyleSheet.create({
   },
   dialogCancelBtn: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: 'center',
     marginRight: 6,
     backgroundColor: 'rgba(255, 255, 255, 0.04)',
@@ -1615,11 +1817,11 @@ const styles = StyleSheet.create({
   dialogCancelBtnText: {
     color: '#cbd5e1',
     fontWeight: '800',
-    fontSize: 13,
+    fontSize: 14,
   },
   dialogCreateBtn: {
     flex: 1.5,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: 'center',
     marginLeft: 6,
     backgroundColor: '#10b981',
@@ -1628,7 +1830,36 @@ const styles = StyleSheet.create({
   dialogCreateBtnText: {
     color: '#ffffff',
     fontWeight: '900',
-    fontSize: 13,
+    fontSize: 14,
+  },
+  dialogPlayerIdRow: {
+    flexDirection: 'row',
+    width: '100%',
+    backgroundColor: 'rgba(15, 23, 42, 0.3)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 14,
+    alignItems: 'center',
+  },
+  dialogPlayerIdLabel: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '700',
+    marginRight: 6,
+  },
+  dialogPlayerIdText: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  dialogErrorText: {
+    color: '#ef4444',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 12,
+    alignSelf: 'center',
   },
   // Battle Hub Styles
   battleHubDesc: {
@@ -1678,5 +1909,120 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     fontSize: 13,
     fontWeight: '700',
+  },
+  // Player Card UI (Top of Screen)
+  playerCardContainer: {
+    width: SCREEN_WIDTH * 0.9,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    borderWidth: 1.2,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 22,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  playerCardAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(99, 102, 241, 0.3)',
+  },
+  playerCardAvatarEmoji: {
+    fontSize: 24,
+  },
+  playerCardInfo: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  playerCardNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  playerCardName: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#ffffff',
+  },
+  playerCardCountry: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#818cf8',
+    marginLeft: 6,
+  },
+  playerCardStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  playerCardStatText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94a3b8',
+  },
+  playerCardStatDivider: {
+    width: 1,
+    height: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    marginHorizontal: 8,
+  },
+  // Avatar Picker Styles
+  avatarPickerScroll: {
+    width: '100%',
+    maxHeight: 65,
+    marginBottom: 14,
+  },
+  avatarPickOption: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  avatarPickOptionSelected: {
+    borderColor: '#10b981',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+  },
+  avatarPickEmoji: {
+    fontSize: 20,
+  },
+  lobbyHostCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    marginTop: 10,
+  },
+  lobbyHostLabel: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '700',
+    marginRight: 6,
+  },
+  lobbyHostAvatar: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  lobbyHostName: {
+    color: '#ffffff',
+    fontWeight: '800',
+    fontSize: 13,
   },
 });

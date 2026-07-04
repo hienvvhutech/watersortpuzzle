@@ -186,6 +186,15 @@ export interface ProfileState {
   achievements: Record<string, Achievement>;
   dailyMissions: DailyMission[];
   unlockedBadges: string[];
+
+  // Player Identity Phase 5
+  playerId: string | null;
+  displayName: string;
+  avatarId: string;
+  country?: string;
+  createdAt: number;
+  updatedAt: number;
+  isProfileCreated: boolean;
   
   // Play Session Telemetry
   sessionLevelsPlayed: number;
@@ -201,6 +210,8 @@ export interface ProfileState {
 export interface LeaderboardEntry {
   userId: string;
   username: string;
+  avatarId?: string;
+  country?: string;
   level: number;
   score: number;
   coins: number;
@@ -220,5 +231,20 @@ export interface BattleSession {
   opponentProgress: number; // 0 to 100
   isHost: boolean;
   status: 'waiting' | 'active' | 'won' | 'lost';
+}
+
+export interface PlayerProfile {
+  playerId: string;
+  displayName: string;
+  avatarId: string;
+  country?: string;
+  currentLevel: number;
+  highestLevel: number;
+  totalCoins: number;
+  totalScore: number;
+  bestTime: number;
+  createdAt: number;
+  updatedAt: number;
+  isProfileCreated: boolean;
 }
 

@@ -24,9 +24,14 @@ export class LocalLeaderboardRepository implements ILeaderboardRepository {
     if (!stored) {
       const generatedPlayers: LeaderboardEntry[] = SEED_USERNAMES.map((username, index) => {
         const rankIndex = index + 1;
+        const avatarIndex = Math.floor(1 + Math.random() * 20);
+        const countries = ['VN', 'US', 'SG', 'JP', 'KR', 'TH', 'PH', 'MY'];
+        const randomCountry = countries[Math.floor(Math.random() * countries.length)];
         return {
           userId: `sim_${rankIndex}`,
           username,
+          avatarId: `avatar_${avatarIndex}`,
+          country: randomCountry,
           level: Math.max(5, 40 - index * 3), // Levels range from 40 down to 5
           score: Math.max(1000, 15000 - index * 1100),
           coins: Math.max(500, 9500 - index * 700),
@@ -132,9 +137,14 @@ export class LocalLeaderboardRepository implements ILeaderboardRepository {
 
     friends.forEach((friendName) => {
       const randomSeed = Math.random();
+      const avatarIndex = Math.floor(1 + Math.random() * 20);
+      const countries = ['VN', 'US', 'SG', 'JP', 'KR', 'TH', 'PH', 'MY'];
+      const randomCountry = countries[Math.floor(Math.random() * countries.length)];
       friendStats[`${newGroup.id}_${friendName}`] = {
         userId: `friend_${newGroup.id}_${friendName}`,
         username: friendName,
+        avatarId: `avatar_${avatarIndex}`,
+        country: randomCountry,
         level: Math.max(1, Math.floor(randomSeed * 25)),
         score: Math.max(200, Math.floor(randomSeed * 8500)),
         coins: Math.max(50, Math.floor(randomSeed * 4500)),

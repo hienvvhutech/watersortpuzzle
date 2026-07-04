@@ -2,10 +2,12 @@ import { IAnalyticsService } from '../domain/repositories/IAnalyticsService';
 import { IErrorService } from '../domain/repositories/IErrorService';
 import { ILeaderboardRepository } from '../domain/repositories/ILeaderboardRepository';
 import { IBattleService } from '../domain/repositories/IBattleService';
+import { IProfileRepository } from '../domain/repositories/IProfileRepository';
 import { ConsoleAnalyticsService } from '../services/ConsoleAnalyticsService';
 import { ConsoleErrorService } from '../services/ConsoleErrorService';
 import { LocalLeaderboardRepository } from '../services/LocalLeaderboardRepository';
 import { LocalBattleService } from '../services/LocalBattleService';
+import { LocalProfileRepository } from '../services/LocalProfileRepository';
 
 /**
  * Type-safe Service Locator for Dependency Injection.
@@ -15,11 +17,12 @@ class ServiceRegistry {
   private registry = new Map<string, any>();
 
   constructor() {
-    // Register Phase 2, 3 & 4 services
-    this.register<IAnalyticsService>('Analytics', new ConsoleAnalyticsService());
-    this.register<IErrorService>('Error', new ConsoleErrorService());
-    this.register<ILeaderboardRepository>('Leaderboard', new LocalLeaderboardRepository());
-    this.register<IBattleService>('Battle', new LocalBattleService());
+    // Register Phase 2, 3, 4 & 5 services
+    this.registry.set('Analytics', new ConsoleAnalyticsService());
+    this.registry.set('Error', new ConsoleErrorService());
+    this.registry.set('Leaderboard', new LocalLeaderboardRepository());
+    this.registry.set('Battle', new LocalBattleService());
+    this.registry.set('Profile', new LocalProfileRepository());
   }
 
   /**
@@ -42,4 +45,4 @@ class ServiceRegistry {
 }
 
 export const services = new ServiceRegistry();
-export type { IAnalyticsService, IErrorService, IBattleService };
+export type { IAnalyticsService, IErrorService, IBattleService, IProfileRepository };
