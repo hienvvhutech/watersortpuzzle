@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Audio } from 'expo-av';
+import { createAudioPlayer, AudioPlayer } from 'expo-audio';
 import { useSettingsStore } from '../store/settingsStore';
 
 const SOUND_ASSETS: Record<string, any> = {
@@ -15,7 +15,7 @@ const SOUND_ASSETS: Record<string, any> = {
 
 export const useAudio = () => {
   const { soundEnabled, musicEnabled } = useSettingsStore();
-  const bgmSoundRef = useRef<Audio.Sound | null>(null);
+  const bgmSoundRef = useRef<AudioPlayer | null>(null);
 
   // Play a one-shot SFX sound
   const playSound = async (name: keyof typeof SOUND_ASSETS) => {
@@ -25,14 +25,15 @@ export const useAudio = () => {
       const asset = SOUND_ASSETS[name];
       if (!asset) return;
 
-      const { sound } = await Audio.Sound.createAsync(asset, { shouldPlay: true });
+      const player = createAudioPlayer(asset);
+      player.play();
       
-      // Auto unload sound once it completes playing to prevent memory leaks
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          sound.unloadAsync().catch(() => {});
-        }
-      });
+      // Auto release sound after 3 seconds to prevent native memory leaks
+      setTimeout(() => {
+        try {
+          player.release();
+        } catch (e) {}
+      }, 3000);
     } catch (e) {
       console.warn(`Failed to play sound: ${name}`, e);
     }
@@ -44,11 +45,11 @@ export const useAudio = () => {
     if (bgmSoundRef.current) return; // Already playing
 
     try {
-      const { sound } = await Audio.Sound.createAsync(
-        SOUND_ASSETS.bgm,
-        { shouldPlay: true, isLooping: true, volume: 0.4 }
-      );
-      bgmSoundRef.current = sound;
+      const player = createAudioPlayer(SOUND_ASSETS.bgm);
+      player.loop = true;
+      player.volume = 0.4;
+      player.play();
+      bgmSoundRef.current = player;
     } catch (e) {
       console.warn('Failed to start BGM', e);
     }
@@ -58,8 +59,8 @@ export const useAudio = () => {
   const stopBgm = async () => {
     if (!bgmSoundRef.current) return;
     try {
-      await bgmSoundRef.current.stopAsync();
-      await bgmSoundRef.current.unloadAsync();
+      bgmSoundRef.current.pause();
+      bgmSoundRef.current.release();
       bgmSoundRef.current = null;
     } catch (e) {
       console.warn('Failed to stop BGM', e);
