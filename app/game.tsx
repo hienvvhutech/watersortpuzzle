@@ -303,6 +303,18 @@ export default function GameScreen() {
       {/* Portrait Mobile-First SafeArea layout */}
       <SafeAreaView style={styles.safeArea}>
         
+        {/* Floating Settings Button in top right (above/outside the level frame) */}
+        <Pressable
+          style={({ pressed }) => [styles.floatingSettingsButton, pressed && styles.pressedScaleSmall]}
+          onPress={() => {
+            audio.playSound('click');
+            haptics.selection();
+            setSettingsVisible(true);
+          }}
+        >
+          <Ionicons name="settings-sharp" size={18} color="#cbd5e1" />
+        </Pressable>
+
         {/* Region 1: Header (10%) */}
         <View style={styles.headerRegion}>
           <View style={styles.glassHeader}>
@@ -325,23 +337,10 @@ export default function GameScreen() {
               </Text>
             </View>
 
-            {/* Right Section: Coins and Settings */}
-            <View style={styles.hudRightGroup}>
-              <View style={styles.hudCoinsBadge}>
-                <FontAwesome5 name="coins" size={12} color="#fbbf24" style={{ marginRight: 6 }} />
-                <Text style={styles.hudCoinsText}>{coins}</Text>
-              </View>
-
-              <Pressable
-                style={({ pressed }) => [styles.hudIconButton, pressed && styles.pressedScaleSmall, { marginLeft: 10 }]}
-                onPress={() => {
-                  audio.playSound('click');
-                  haptics.selection();
-                  setSettingsVisible(true);
-                }}
-              >
-                <Ionicons name="settings-sharp" size={18} color="#cbd5e1" />
-              </Pressable>
+            {/* Right Section: Coins placed in Settings Button's position */}
+            <View style={styles.hudCoinsBadge}>
+              <FontAwesome5 name="coins" size={12} color="#fbbf24" style={{ marginRight: 6 }} />
+              <Text style={styles.hudCoinsText}>{coins}</Text>
             </View>
           </View>
         </View>
@@ -837,6 +836,20 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(239, 68, 68, 0.6)',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 8,
+  },
+  floatingSettingsButton: {
+    position: 'absolute',
+    right: 16,
+    top: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    zIndex: 100,
   },
   hudRightGroup: {
     flexDirection: 'row',
