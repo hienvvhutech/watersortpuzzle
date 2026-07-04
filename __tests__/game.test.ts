@@ -1,6 +1,25 @@
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock')
 );
+jest.mock('firebase/app', () => ({
+  initializeApp: jest.fn(),
+  getApps: jest.fn(() => []),
+  getApp: jest.fn(),
+}));
+
+jest.mock('firebase/auth', () => ({
+  getAuth: jest.fn(),
+  signInAnonymously: jest.fn(),
+}));
+
+jest.mock('firebase/firestore', () => ({
+  initializeFirestore: jest.fn(),
+  persistentLocalCache: jest.fn(),
+  persistentMultipleTabManager: jest.fn(),
+  doc: jest.fn(),
+  getDoc: jest.fn(),
+  setDoc: jest.fn(),
+}));
 
 import { isValidMove, executeMove, checkWinCondition, TUBE_CAPACITY } from '../src/domain/rules';
 import { solve, getNextHint } from '../src/domain/solver';
@@ -124,6 +143,14 @@ describe('Water Sort Puzzle Unit Tests', () => {
       
       // Higher levels should have more tubes and more colors
       expect(lvl50.tubes.length).toBeGreaterThanOrEqual(lvl1.tubes.length);
+    });
+
+    it('should generate all levels from 1 to 50 without freezing', () => {
+      for (let i = 1; i <= 50; i++) {
+        const lvl = generateLevel(i);
+        expect(lvl).toBeDefined();
+        expect(lvl.tubes.length).toBeGreaterThan(0);
+      }
     });
   });
 

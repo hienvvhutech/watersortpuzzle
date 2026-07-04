@@ -8,6 +8,8 @@ import { ConsoleErrorService } from '../services/ConsoleErrorService';
 import { LocalLeaderboardRepository } from '../services/LocalLeaderboardRepository';
 import { LocalBattleService } from '../services/LocalBattleService';
 import { LocalProfileRepository } from '../services/LocalProfileRepository';
+import { FirestoreProfileRepository } from '../services/FirestoreProfileRepository';
+import { isConfigured } from '../services/firebase';
 
 /**
  * Type-safe Service Locator for Dependency Injection.
@@ -22,7 +24,12 @@ class ServiceRegistry {
     this.registry.set('Error', new ConsoleErrorService());
     this.registry.set('Leaderboard', new LocalLeaderboardRepository());
     this.registry.set('Battle', new LocalBattleService());
-    this.registry.set('Profile', new LocalProfileRepository());
+    
+    if (isConfigured) {
+      this.registry.set('Profile', new FirestoreProfileRepository());
+    } else {
+      this.registry.set('Profile', new LocalProfileRepository());
+    }
   }
 
   /**

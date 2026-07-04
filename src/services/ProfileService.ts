@@ -56,6 +56,10 @@ export const ProfileService = {
    * Saves the player profile.
    */
   save: async (profile: PlayerProfile): Promise<void> => {
+    const errorKey = ProfileService.validateDisplayName(profile.displayName);
+    if (errorKey) {
+      throw new Error(`Profile display name validation failed: ${errorKey}`);
+    }
     const repo = services.get<IProfileRepository>('Profile');
     await repo.saveProfile(profile);
   },
