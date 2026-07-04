@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LeaderboardEntry, LeaderboardGroup } from '../domain/types';
 import { ILeaderboardRepository } from '../domain/repositories/ILeaderboardRepository';
+import { useProfileStore } from '../presentation/store/profileStore';
 
 const STORAGE_KEYS = {
   PLAYERS: 'wsp_leaderboard_players',
@@ -22,23 +23,17 @@ export class LocalLeaderboardRepository implements ILeaderboardRepository {
   private async ensureInitialized(): Promise<void> {
     const stored = await AsyncStorage.getItem(STORAGE_KEYS.PLAYERS);
     if (!stored) {
-      const generatedPlayers: LeaderboardEntry[] = SEED_USERNAMES.map((username, index) => {
-        const rankIndex = index + 1;
-        const avatarIndex = Math.floor(1 + Math.random() * 20);
-        const countries = ['VN', 'US', 'SG', 'JP', 'KR', 'TH', 'PH', 'MY'];
-        const randomCountry = countries[Math.floor(Math.random() * countries.length)];
-        return {
-          userId: `sim_${rankIndex}`,
-          username,
-          avatarId: `avatar_${avatarIndex}`,
-          country: randomCountry,
-          level: Math.max(5, 40 - index * 3), // Levels range from 40 down to 5
-          score: Math.max(1000, 15000 - index * 1100),
-          coins: Math.max(500, 9500 - index * 700),
-          bestTime: 12 + index * 6, // Times range from 12s up to 80s
-        };
-      });
-      await AsyncStorage.setItem(STORAGE_KEYS.PLAYERS, JSON.stringify(generatedPlayers));
+      await AsyncStorage.setItem(STORAGE_KEYS.PLAYERS, JSON.stringify([]));
+    } else {
+      try {
+        const players: LeaderboardEntry[] = JSON.parse(stored);
+        const filtered = players.filter(p => !p.userId.startsWith('sim_'));
+        if (filtered.length !== players.length) {
+          await AsyncStorage.setItem(STORAGE_KEYS.PLAYERS, JSON.stringify(filtered));
+        }
+      } catch (e) {
+        await AsyncStorage.setItem(STORAGE_KEYS.PLAYERS, JSON.stringify([]));
+      }
     }
   }
 
@@ -167,7 +162,33 @@ export class LocalLeaderboardRepository implements ILeaderboardRepository {
   private async getPlayerSelf(): Promise<LeaderboardEntry | null> {
     const stored = await AsyncStorage.getItem('wsp_player_self_score');
     if (stored) {
-      return JSON.parse(stored);
+      try {
+        return JSON.parse(stored);
+      } catch (e) {}
+    }
+    // Fallback: build a dynamic player entry directly from the active Zustand profile store!
+    try {
+      const profile = useProfileStore.getState();
+      if (profile && profile.isProfileCreated) {
+        const completedLevelsList = Object.keys(profile.levelProgress).map(Number);
+        const highestCompleted = completedLevelsList.length > 0 ? Math.max(...completedLevelsList) : 0;
+        const totalScore = Object.values(profile.levelProgress).reduce((acc, curr) => acc + (curr.bestScore || 0), 0);
+        const fastestTimes = Object.values(profile.levelProgress).map(curr => curr.fastestTime).filter(t => t > 0);
+        const bestTime = fastestTimes.length > 0 ? Math.min(...fastestTimes) : 999;
+        
+        return {
+          userId: 'player_self',
+          username: profile.displayName || 'Player',
+          avatarId: profile.avatarId || 'avatar_1',
+          country: profile.country || '',
+          level: highestCompleted,
+          score: totalScore,
+          coins: profile.coins,
+          bestTime,
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to build dynamic player self score fallback', e);
     }
     return null;
   }
