@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, Auth, GoogleAuthProvider, OAuthProvider, linkWithCredential, signInWithCredential, AuthCredential } from 'firebase/auth';
-import { Firestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { Firestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getFirestore } from 'firebase/firestore';
 import { getDatabase, Database } from 'firebase/database';
 
 import { Platform } from 'react-native';
@@ -26,13 +26,17 @@ if (isConfigured) {
   try {
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     auth = getAuth(app);
-    db = initializeFirestore(app, {
-      localCache: persistentLocalCache(
-        Platform.OS === 'web'
-          ? { tabManager: persistentMultipleTabManager() }
-          : {}
-      ),
-    });
+    
+    if (Platform.OS === 'web') {
+      db = initializeFirestore(app, {
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager(),
+        }),
+      });
+    } else {
+      db = getFirestore(app);
+    }
+    
     rtdb = getDatabase(app);
   } catch (e) {
     console.warn('Firebase initialization failed:', e);
