@@ -395,7 +395,7 @@ export default function HomeScreen() {
             }}
           >
             <View style={styles.menuButtonContent}>
-              <Ionicons name="map" size={14} color="#e2e8f0" style={{ marginRight: 4 }} />
+              <Ionicons name="map" size={18} color="#cbd5e1" />
               <Text style={styles.menuButtonText}>{t('home.levels')}</Text>
             </View>
           </Pressable>
@@ -412,7 +412,7 @@ export default function HomeScreen() {
             }}
           >
             <View style={styles.menuButtonContent}>
-              <Ionicons name="trophy" size={14} color="#e2e8f0" style={{ marginRight: 4 }} />
+              <Ionicons name="trophy" size={18} color="#cbd5e1" />
               <Text style={styles.menuButtonText}>{t('home.leaderboard')}</Text>
             </View>
           </Pressable>
@@ -429,7 +429,7 @@ export default function HomeScreen() {
             }}
           >
             <View style={styles.menuButtonContent}>
-              <Ionicons name="bar-chart" size={14} color="#e2e8f0" style={{ marginRight: 4 }} />
+              <Ionicons name="bar-chart" size={18} color="#cbd5e1" />
               <Text style={styles.menuButtonText}>{t('home.stats')}</Text>
             </View>
           </Pressable>
@@ -446,7 +446,7 @@ export default function HomeScreen() {
             }}
           >
             <View style={styles.menuButtonContent}>
-              <Ionicons name="settings" size={14} color="#e2e8f0" style={{ marginRight: 4 }} />
+              <Ionicons name="settings" size={18} color="#cbd5e1" />
               <Text style={styles.menuButtonText}>{t('home.settings')}</Text>
             </View>
           </Pressable>
@@ -1098,19 +1098,21 @@ const styles = StyleSheet.create({
   },
   menuButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderRadius: 14,
     borderWidth: 1.2,
     borderColor: 'rgba(255, 255, 255, 0.06)',
     flex: 1,
-    marginHorizontal: 4,
+    marginHorizontal: 3,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   menuButtonText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
-    color: '#e2e8f0',
+    color: '#cbd5e1',
+    marginTop: 4,
   },
   modalOverlay: {
     flex: 1,
@@ -1256,7 +1258,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   menuButtonContent: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
   },
