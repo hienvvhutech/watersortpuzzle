@@ -13,27 +13,28 @@ const SOUND_ASSETS: Record<string, any> = {
   bgm: require('../../../assets/audio/bgm.mp3'),
 };
 
+// Global cache of pre-created players to prevent native allocation lags during gameplay
+const sfxPlayers: Record<string, AudioPlayer> = {};
+
+const getPlayer = (name: keyof typeof SOUND_ASSETS): AudioPlayer => {
+  if (!sfxPlayers[name]) {
+    sfxPlayers[name] = createAudioPlayer(SOUND_ASSETS[name]);
+  }
+  return sfxPlayers[name];
+};
+
 export const useAudio = () => {
   const { soundEnabled, musicEnabled } = useSettingsStore();
   const bgmSoundRef = useRef<AudioPlayer | null>(null);
 
-  // Play a one-shot SFX sound
+  // Play a one-shot SFX sound (Reuses global players to avoid runtime allocations)
   const playSound = async (name: keyof typeof SOUND_ASSETS) => {
     if (!soundEnabled) return;
     
     try {
-      const asset = SOUND_ASSETS[name];
-      if (!asset) return;
-
-      const player = createAudioPlayer(asset);
+      const player = getPlayer(name);
+      player.seekTo(0);
       player.play();
-      
-      // Auto release sound after 3 seconds to prevent native memory leaks
-      setTimeout(() => {
-        try {
-          player.release();
-        } catch (e) {}
-      }, 3000);
     } catch (e) {
       console.warn(`Failed to play sound: ${name}`, e);
     }
@@ -45,7 +46,7 @@ export const useAudio = () => {
     if (bgmSoundRef.current) return; // Already playing
 
     try {
-      const player = createAudioPlayer(SOUND_ASSETS.bgm);
+      const player = getPlayer('bgm');
       player.loop = true;
       player.volume = 0.4;
       player.play();
@@ -60,7 +61,6 @@ export const useAudio = () => {
     if (!bgmSoundRef.current) return;
     try {
       bgmSoundRef.current.pause();
-      bgmSoundRef.current.release();
       bgmSoundRef.current = null;
     } catch (e) {
       console.warn('Failed to stop BGM', e);

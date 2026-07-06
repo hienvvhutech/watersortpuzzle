@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, Pressable } from 'react-native';
+import { StyleSheet, View, Pressable, Platform } from 'react-native';
 import Svg, { Path, G, ClipPath, Rect, Defs, LinearGradient, Stop } from 'react-native-svg';
 import Animated, {
   useSharedValue,
@@ -24,6 +24,7 @@ interface WaterLayerProps {
   slotIndex: number;
   isTop: boolean;
   wavePhase: SharedValue<number>;
+  isSelected: boolean;
 }
 
 // 1.3x Scaled dimensions (65x214 tube layout)
@@ -31,7 +32,7 @@ const LAYER_HEIGHT = 42;
 const TUBE_BOTTOM_Y = 198;
 const TUBE_WIDTH = 60; // Inner water width
 
-const WaterLayer: React.FC<WaterLayerProps> = ({ color, slotIndex, isTop, wavePhase }) => {
+const WaterLayer: React.FC<WaterLayerProps> = ({ color, slotIndex, isTop, wavePhase, isSelected }) => {
   const heightVal = useSharedValue(color ? 1 : 0);
   const [renderColor, setRenderColor] = useState(color);
 
@@ -61,7 +62,11 @@ const WaterLayer: React.FC<WaterLayerProps> = ({ color, slotIndex, isTop, wavePh
       return { d: '' };
     }
 
-    if (isTop) {
+    const isMobile = Platform.OS !== 'web';
+    // Only animate waves on web, or on mobile if the tube is currently active/selected (to save CPU on mobile)
+    const animateWave = !isMobile || isSelected;
+
+    if (isTop && animateWave) {
       // Sinusoidal wave simulation using quadratic Beziers (scaled by 1.3)
       const amplitude = 3.0;
       const wave1 = Math.sin(wavePhase.value) * amplitude;
@@ -89,7 +94,7 @@ const WaterLayer: React.FC<WaterLayerProps> = ({ color, slotIndex, isTop, wavePh
         d: `M ${x0},${yBottom} L ${x0},${yTop} L ${x4},${yTop} L ${x4},${yBottom} Z`,
       };
     }
-  }, [renderColor, slotIndex, heightVal, isTop, wavePhase]);
+  }, [renderColor, slotIndex, heightVal, isTop, wavePhase, isSelected]);
 
   if (!renderColor) return null;
 
@@ -205,6 +210,7 @@ export const TubeComponent: React.FC<TubeComponentProps> = ({
                   slotIndex={idx}
                   isTop={isTop}
                   wavePhase={wavePhase}
+                  isSelected={isSelected}
                 />
               );
             })}
