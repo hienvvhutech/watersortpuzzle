@@ -1,6 +1,6 @@
 import { IProfileRepository } from '../domain/repositories/IProfileRepository';
 import { PlayerProfile } from '../domain/types';
-import { auth, db } from './firebase';
+import { auth, db, isConfigured } from './firebase';
 import { signInAnonymously } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -120,9 +120,10 @@ export class FirestoreProfileRepository implements IProfileRepository {
       } catch (e: any) {
         attempt++;
         if (attempt >= maxRetries) {
+          const errMsg = e instanceof Error ? e.message : String(e);
           Alert.alert(
             'Lỗi kết nối / Connection Error',
-            'Không thể đồng bộ hồ sơ lên máy chủ. Tiến trình đã được lưu tạm thời trên máy này và sẽ tự động đồng bộ khi có kết nối mạng ổn định.'
+            `Không thể đồng bộ hồ sơ lên máy chủ: ${errMsg}\n\nFirebase Configured: ${isConfigured ? 'YES' : 'NO'}`
           );
           throw e;
         }
