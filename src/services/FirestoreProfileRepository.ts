@@ -75,15 +75,23 @@ export class FirestoreProfileRepository implements IProfileRepository {
   }
 
   async saveProfile(profile: PlayerProfile): Promise<void> {
+    // Sanitize profile to remove any functions (Zustand actions)
+    const cleanProfile: any = {};
+    for (const key of Object.keys(profile)) {
+      if (typeof (profile as any)[key] !== 'function') {
+        cleanProfile[key] = (profile as any)[key];
+      }
+    }
+
     // 1. Instantly save to local AsyncStorage cache
-    await AsyncStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(profile));
+    await AsyncStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(cleanProfile));
 
     // 2. Write to Firestore with retry wrapper
     try {
       const uid = await this.ensureAuthenticated();
       // Ensure the profile object has the Firebase UID
       const updatedProfile = {
-        ...profile,
+        ...cleanProfile,
         playerId: uid,
         updatedAt: new Date().toISOString(),
       };
